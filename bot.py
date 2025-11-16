@@ -1,9 +1,9 @@
-from flask import Flask, request, jsonify
 import requests
 import os
 import threading
 import time
-import schedule
+import json
+from datetime import datetime
 
 app = Flask(__name__)
 
@@ -17,6 +17,7 @@ AUTHORIZED_USER_IDS = [
 
 # Глобальная переменная для хранения последнего курса
 current_btc_price = None
+is_sending_enabled = True  # Флаг для управления отправкой
 
 print("🤖 Private Viber Bot starting...")
 print(f"🔐 Authorized users: {len(AUTHORIZED_USER_IDS)}")
@@ -36,6 +37,7 @@ def get_btc_price():
             data = response.json()
             return float(data['price'])
         else:
+            print(f"❌ API error: {response.status_code}")
             return None
     except Exception as e:
         print(f"❌ Error getting BTC price: {e}")
@@ -43,32 +45,48 @@ def get_btc_price():
 
 def send_btc_price_update():
     """Отправляет обновление курса BTC авторизованным пользователям"""
-    global current_btc_price
+    global current_btc_price, is_sending_enabled
+    
+    if not is_sending_enabled:
+        print("⏸️ Sending is disabled")
+        return
+    
+    print(f"🔄 Sending BTC update at {datetime.now().strftime('%H:%M:%S')}")
     
     price = get_btc_price()
     if price is not None:
         current_btc_price = price
-        message = f"📊 BTC: ${price:,.2f}"
+        message = f"📊 BTC: ${price:,.2f}\n🕒 {datetime.now().strftime('%H:%M:%S')}"
         
+        success_count = 0
         # Отправляем всем авторизованным пользователям
         for user_id in AUTHORIZED_USER_IDS:
-            send_message(user_id, message)
-            print(f"📤 Sent BTC price to {user_id[:8]}...")
+            if send_message(user_id, message):
+                success_count += 1
+                print(f"📤 Sent BTC price to {user_id[:8]}...")
+            else:
+                print(f"❌ Failed to send to {user_id[:8]}...")
+        
+        print(f"✅ BTC update completed: {success_count}/{len(AUTHORIZED_USER_IDS)} users")
     else:
         print("❌ Failed to get BTC price")
 
-def schedule_worker():
-    """Фоновая задача для выполнения расписания"""
+def periodic_btc_sender():
+    """Функция для периодической отправки курса (каждые 20 секунд)"""
     while True:
-        schedule.run_pending()
-        time.sleep(1)
+        try:
+            send_btc_price_update()
+            time.sleep(20)  # Ждем 20 секунд
+        except Exception as e:
+            print(f"❌ Error in periodic sender: {e}")
+            time.sleep(20)  # При ошибке тоже ждем 20 секунд
 
 def send_message(user_id, text):
     """Отправляет сообщение пользователю через Viber API"""
     if not VIBER_TOKEN:
         print("❌ VIBER_TOKEN not set in environment variables")
         return False
-        
+    
     try:
         url = 'https://chatapi.viber.com/pa/send_message'
         headers = {
@@ -82,13 +100,18 @@ def send_message(user_id, text):
         }
         
         response = requests.post(url, json=payload, headers=headers, timeout=10)
-        if response.status_code == 200:
-            print(f"📤 Sent to {user_id[:8]}...: {text}")
-            return True
-        else:
-            print(f"❌ Viber API error: {response.status_code} - {response.text}")
-            return False
         
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('status') == 0:
+                return True
+            else:
+                print(f"❌ Viber API error: {result}")
+                return False
+        else:
+            print(f"❌ HTTP error: {response.status_code} - {response.text}")
+            return False
+            
     except Exception as e:
         print(f"❌ Send error: {e}")
         return False
@@ -97,13 +120,15 @@ def send_message(user_id, text):
 def home():
     """Главная страница"""
     global current_btc_price
-    price_info = f"Current BTC: ${current_btc_price:,.2f}" if current_btc_price else "BTC price not available"
+    price_info = f"${current_btc_price:,.2f}" if current_btc_price else "N/A"
     
     return jsonify({
-        "status": "ok", 
+        "status": "ok",
         "message": "Viber Crypto Bot is running!",
-        "btc_price": current_btc_price,
-        "authorized_users": len(AUTHORIZED_USER_IDS)
+        "btc_price": price_info,
+        "authorized_users": len(AUTHORIZED_USER_IDS),
+        "auto_sending": is_sending_enabled,
+        "timestamp": datetime.now().isoformat()
     })
 
 @app.route('/webhook', methods=['GET', 'POST', 'HEAD'])
@@ -115,6 +140,7 @@ def webhook():
     if request.method == 'POST':
         try:
             data = request.get_json()
+            print(f"📨 Received webhook: {data.get('event', 'unknown')}")
             
             # Получаем ID пользователя
             user_id = None
@@ -131,7 +157,8 @@ def webhook():
             
             # Обрабатываем сообщения только авторизованных пользователей
             if data.get('event') == 'message' and data['message']['type'] == 'text':
-                message_text = data['message']['text'].lower()
+                message_text = data['message']['text'].lower().strip()
+                print(f"💬 Message from {user_id[:8]}...: {message_text}")
                 
                 responses = {
                     'привет': '👋 Привет! Это приватный крипто-бот!',
@@ -143,19 +170,20 @@ def webhook():
                     'статус': '✅ Бот работает в штатном режиме с авто-обновлением курса'
                 }
                 
-                response_text = responses.get(message_text, f'🤔 Не понял: {message_text}')
+                response_text = responses.get(message_text, f'🤔 Не понял: "{message_text}"\n\nИспользуйте "команды" для списка доступных команд.')
                 send_message(user_id, response_text)
-            
+                
             elif data.get('event') == 'conversation_started':
                 welcome_msg = "🔐 Добро пожаловать в приватный крипто-бот!\n\n"
                 welcome_msg += "Я буду присылать вам курс BTC каждые 20 секунд!\n"
                 welcome_msg += "Используйте команду 'команды' для списка доступных команд."
                 send_message(user_id, welcome_msg)
+                print(f"🎉 Welcome message sent to {user_id[:8]}...")
             
             return jsonify({"status": 0})
             
         except Exception as e:
-            print(f"❌ Error: {e}")
+            print(f"❌ Webhook error: {e}")
             return jsonify({"status": 1})
 
 @app.route('/btc')
@@ -165,22 +193,50 @@ def get_btc():
     price = get_btc_price()
     if price:
         current_btc_price = price
-        return jsonify({"symbol": "BTCUSDT", "price": price})
+        return jsonify({
+            "symbol": "BTCUSDT", 
+            "price": price,
+            "timestamp": datetime.now().isoformat()
+        })
     else:
         return jsonify({"error": "Failed to get BTC price"}), 500
 
-def setup_scheduler():
-    """Настраивает расписание для периодических задач"""
-    # Отправка курса каждые 20 секунд
-    schedule.every(20).seconds.do(send_btc_price_update)
+@app.route('/status')
+def status():
+    """Статус бота"""
+    return jsonify({
+        "bot_status": "running",
+        "btc_price": current_btc_price,
+        "authorized_users": len(AUTHORIZED_USER_IDS),
+        "auto_sending_enabled": is_sending_enabled,
+        "last_update": datetime.now().isoformat()
+    })
+
+@app.route('/toggle-sending', methods=['POST'])
+def toggle_sending():
+    """Включить/выключить автоотправку"""
+    global is_sending_enabled
+    data = request.get_json() or {}
+    is_sending_enabled = data.get('enabled', not is_sending_enabled)
     
-    # Также можно добавить другие интервалы:
-    # schedule.every(1).minutes.do(some_task)
-    # schedule.every(1).hours.do(some_task)
-    
-    print("✅ Scheduler setup complete - BTC price updates every 20 seconds")
+    status_msg = "включена" if is_sending_enabled else "выключена"
+    return jsonify({
+        "message": f"Автоотправка {status_msg}",
+        "enabled": is_sending_enabled
+    })
+
+def start_periodic_sender():
+    """Запускает периодическую отправку курса в отдельном потоке"""
+    sender_thread = threading.Thread(target=periodic_btc_sender, daemon=True)
+    sender_thread.start()
+    print("🚀 Periodic BTC sender started (every 20 seconds)")
 
 if __name__ == '__main__':
+    # Проверяем токен
+    if not VIBER_TOKEN:
+        print("❌ VIBER_TOKEN not set! Please set environment variable.")
+        exit(1)
+    
     # Первоначальное получение курса BTC
     print("🔄 Getting initial BTC price...")
     initial_price = get_btc_price()
@@ -190,15 +246,12 @@ if __name__ == '__main__':
     else:
         print("❌ Failed to get initial BTC price")
     
-    # Настройка планировщика
-    setup_scheduler()
+    # Запускаем периодическую отправку
+    start_periodic_sender()
     
-    # Запуск фонового потока для выполнения расписания
-    scheduler_thread = threading.Thread(target=schedule_worker)
-    scheduler_thread.daemon = True
-    scheduler_thread.start()
-    
-    print(f"🚀 Starting on port {PORT}")
+    print(f"🚀 Starting Viber Bot on port {PORT}")
     print("⏰ BTC price updates will be sent every 20 seconds")
+    print("💡 Use /status endpoint to check bot status")
     
+    # Запускаем Flask приложение
     app.run(host='0.0.0.0', port=int(PORT), debug=False)
