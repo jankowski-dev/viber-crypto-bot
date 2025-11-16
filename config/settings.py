@@ -5,7 +5,7 @@ VIBER_TOKEN = os.environ.get('VIBER_TOKEN')
 PORT = os.environ.get('PORT', 5000)
 
 # Авторизованные пользователи
-AUTHORIZED_USER_IDS = os.environ.get('USER_TOKEN')
+AUTHORIZED_USER_IDS = [os.environ.get('USER_TOKEN')]
 
 # Настройки бота
 BOT_CONFIG = {
