@@ -9,7 +9,7 @@ PORT = os.environ.get('PORT', 5000)
 
 # ⚠️ ЗАМЕНИТЕ НА ВАШ РЕАЛЬНЫЙ USER_ID
 AUTHORIZED_USER_IDS = [
-    "zV/BRbzyPWJHKFpMTLWkqw="  # Замените на ваш реальный ID
+    "zV/BRbzyPWJHKFpMTLWkqw=="  # Замените на ваш реальный ID
 ]
 
 print("🤖 Private Viber Bot starting...")
