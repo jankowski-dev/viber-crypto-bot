@@ -2,8 +2,8 @@ import requests
 import os
 
 # ⚠️ ЗАМЕНИТЕ НА ВАШИ ДАННЫЕ
-VIBER_TOKEN = "ваш_токен_из_viber"
-RAILWAY_URL = "https://ваш-проект.up.railway.app"  # Замените на ваш URL после деплоя
+VIBER_TOKEN = "4c260b1021a7d25c-aabec380d3b7e69c-5a07198d769c5663"
+RAILWAY_URL = "viber-crypto-bot.railway.internal"  # Замените на ваш URL после деплоя
 
 def setup_webhook():
     webhook_url = f"{RAILWAY_URL}/webhook"
