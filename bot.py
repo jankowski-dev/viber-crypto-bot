@@ -22,20 +22,25 @@ print("🤖 Private Viber Bot starting...")
 print(f"🔐 Authorized users: {len(AUTHORIZED_USER_IDS)}")
 
 def get_btc_price():
-    """Получает текущий курс биткоина с Binance"""
+    """Получает текущий курс биткоина с CoinGecko"""
     try:
         response = requests.get(
-            'https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT',
+            'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true',
             timeout=10
         )
         if response.status_code == 200:
             data = response.json()
-            return float(data['price'])
+            btc_price = data['bitcoin']['usd']
+            change_24h = data['bitcoin']['usd_24h_change']
+            return {
+                'price': float(btc_price),
+                'change_24h': float(change_24h)
+            }
         else:
-            print(f"❌ API error: {response.status_code}")
+            print(f"❌ CoinGecko API error: {response.status_code}")
             return None
     except Exception as e:
-        print(f"❌ Error getting BTC price: {e}")
+        print(f"❌ Error getting BTC price from CoinGecko: {e}")
         return None
 
 def send_btc_updates():
@@ -44,11 +49,29 @@ def send_btc_updates():
     
     print(f"🔄 Sending BTC update at {datetime.now().strftime('%H:%M:%S')}")
     
-    price = get_btc_price()
-    if price is not None:
+    btc_data = get_btc_price()
+    if btc_data is not None:
+        price = btc_data['price']
+        change_24h = btc_data['change_24h']
         current_btc_price = price
+        
         timestamp = datetime.now().strftime('%H:%M:%S')
-        message = f"📊 BTC: ${price:,.2f}\n🕒 {timestamp}\n\n💡 Обновляется каждые 30 секунд"
+        
+        # Форматируем изменение за 24 часа
+        if change_24h > 0:
+            change_emoji = "📈"
+            change_text = f"+{change_24h:.2f}%"
+        else:
+            change_emoji = "📉"
+            change_text = f"{change_24h:.2f}%"
+        
+        message = f"""📊 Bitcoin (BTC)
+
+💰 ${price:,.2f}
+{change_emoji} 24ч: {change_text}
+
+🕒 {timestamp}
+⏰ Обновляется каждые 30 секунд"""
         
         success_count = 0
         # Отправляем всем авторизованным пользователям
@@ -60,8 +83,9 @@ def send_btc_updates():
                 print(f"❌ Failed to send to {user_id[:8]}...")
         
         print(f"✅ BTC update completed: {success_count}/{len(AUTHORIZED_USER_IDS)} users")
+        print(f"💰 Current price: ${price:,.2f} | Change: {change_24h:.2f}%")
     else:
-        print("❌ Failed to get BTC price")
+        print("❌ Failed to get BTC price from CoinGecko")
 
 def btc_scheduler():
     """Фоновая задача для отправки курса BTC каждые 30 секунд"""
@@ -108,16 +132,28 @@ def webhook():
                     'портфель': '💰 Портфель: 1.2 BTC, 5.3 ETH',
                     'цена btc': f'📈 BTC: ${current_btc_price:,.2f}' if current_btc_price else '📈 Курс BTC временно недоступен',
                     'курс': f'💰 Текущий курс BTC: ${current_btc_price:,.2f}' if current_btc_price else '💰 Курс временно недоступен',
-                    'команды': '🛠 Команды: привет, портфель, цена btc, курс, статус',
+                    'команды': '🛠 Команды: привет, портфель, цена btc, курс, статус, btc',
                     'мой id': f'🆔 Ваш ID: {user_id}',
-                    'статус': '✅ Бот работает в штатном режиме с авто-обновлением курса BTC каждые 30 секунд'
+                    'статус': '✅ Бот работает в штатном режиме с авто-обновлением курса BTC каждые 30 секунд',
+                    'btc': f'₿ Bitcoin:\n💰 ${current_btc_price:,.2f}\n⏰ Обновляется каждые 30 секунд' if current_btc_price else '₿ Bitcoin: курс временно недоступен'
                 }
                 
                 response_text = responses.get(message_text, f'🤔 Не понял: {message_text}')
                 send_message(user_id, response_text)
             
             elif data.get('event') == 'conversation_started':
-                send_message(user_id, "🔐 Добро пожаловать в приватный от!")
+                welcome_msg = """🔐 Добро пожаловать в приватный крипто-бот!
+
+Я буду присылать вам курс Bitcoin каждые 30 секунд!
+
+🛠 Доступные команды:
+• цена btc - текущий курс
+• курс - курс Bitcoin
+• btc - информация о Bitcoin
+• статус - статус бота
+
+💰 Используйте команду 'btc' для получения актуального курса!"""
+                send_message(user_id, welcome_msg)
             
             return jsonify({"status": 0})
             
@@ -178,10 +214,11 @@ if __name__ == '__main__':
     
     # Получаем первоначальный курс BTC
     print("🔄 Getting initial BTC price...")
-    initial_price = get_btc_price()
-    if initial_price:
-        current_btc_price = initial_price
-        print(f"✅ Initial BTC price: ${current_btc_price:,.2f}")
+    initial_btc_data = get_btc_price()
+    if initial_btc_data:
+        current_btc_price = initial_btc_data['price']
+        change_24h = initial_btc_data['change_24h']
+        print(f"✅ Initial BTC price: ${current_btc_price:,.2f} | Change: {change_24h:.2f}%")
     else:
         print("❌ Failed to get initial BTC price")
     
