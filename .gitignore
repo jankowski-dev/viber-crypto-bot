@@ -1,0 +1,18 @@
+# Файлы с чувствительными данными
+setup_webhook.py
+config.py
+.env
+*.env
+
+# Файлы Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+
+# Логи
+*.log
+
+# IDE
+.vscode/
+.idea/
