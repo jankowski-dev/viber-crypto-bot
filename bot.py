@@ -366,10 +366,10 @@ def btc_scheduler():
     while True:
         try:
             send_btc_updates()
-            time.sleep(30)  # Каждые 30 секунд
+            time.sleep(300)  # Каждые 300 секунд
         except Exception as e:
             print(f"❌ Error in BTC scheduler: {e}")
-            time.sleep(30)  # При ошибке тоже ждем 30 секунд
+            time.sleep(300)  # При ошибке тоже ждем 300 секунд
 
 def create_main_menu():
     """Создает главное меню с категориями"""
