@@ -83,43 +83,144 @@ def get_all_notion_data():
         print(f"❌ Error getting Notion data: {e}")
         return None
 
-def format_all_notion_data():
-    """Форматирует все данные из Notion для отображения в боте"""
-    data = get_all_notion_data()
+def get_notion_data_for_ai():
+    """Получает данные из Notion с минимальной нагрузкой для ИИ обработки"""
+    if not NOTION_TOKEN or not NOTION_DATABASE_ID:
+        return None
+
+    try:
+        url = f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query"
+        headers = {
+            "Authorization": f"Bearer {NOTION_TOKEN}",
+            "Notion-Version": "2022-06-28",
+            "Content-Type": "application/json"
+        }
+        
+        # Ограничиваем количество записей для минимальной нагрузки
+        payload = {
+            "page_size": 50  # Максимум 50 записей за раз
+        }
+        
+        response = requests.post(url, headers=headers, json=payload)
+        
+        if response.status_code == 200:
+            data = response.json()
+            structured_data = []
+            
+            for page in data.get("results", []):
+                page_data = {
+                    "id": page.get('id'),
+                    "title": "Untitled",
+                    "properties": {}
+                }
+                
+                # Получаем основные свойства
+                properties = page.get("properties", {})
+                for prop_name, prop_data in properties.items():
+                    prop_type = prop_data.get('type')
+                    
+                    # Извлекаем значение в зависимости от типа
+                    if prop_type == 'title':
+                        title_items = prop_data.get('title', [])
+                        if title_items:
+                            page_data["title"] = title_items[0].get('plain_text', 'Untitled')
+                    
+                    elif prop_type == 'number':
+                        page_data["properties"][prop_name] = prop_data.get('number')
+                    
+                    elif prop_type == 'text' or prop_type == 'rich_text':
+                        text_items = prop_data.get(prop_type, [])
+                        if text_items:
+                            page_data["properties"][prop_name] = text_items[0].get('plain_text', '')
+                    
+                    elif prop_type == 'date':
+                        date_obj = prop_data.get('date', {})
+                        page_data["properties"][prop_name] = date_obj.get('start', '')
+                    
+                    elif prop_type == 'select':
+                        select_obj = prop_data.get('select', {})
+                        page_data["properties"][prop_name] = select_obj.get('name', '')
+                    
+                    elif prop_type == 'checkbox':
+                        page_data["properties"][prop_name] = prop_data.get('checkbox', False)
+                    
+                    elif prop_type == 'formula':
+                        formula_result = prop_data.get('formula', {})
+                        page_data["properties"][prop_name] = formula_result.get('number', 0)
+                    
+                    else:
+                        # Для остальных типов сохраняем как есть
+                        page_data["properties"][prop_name] = str(prop_data)
+                
+                structured_data.append(page_data)
+            
+            return structured_data
+            
+        else:
+            print(f"❌ Notion API error: {response.status_code}")
+            return None
+            
+    except Exception as e:
+        print(f"❌ Error getting Notion data for AI: {e}")
+        return None
+
+def format_data_for_ai_display():
+    """Форматирует данные для отображения в боте в формате для ИИ"""
+    data = get_notion_data_for_ai()
     
     if data is None:
-        return """🧪 Диагностика Notion
+        return """🧪 Данные для ИИ
 
 ❌ Не удалось получить данные из Notion
 
-Возможные причины:
-• Неверный токен API
-• Неверный ID базы данных
-• Нет доступа к базе данных
-• Проблемы с подключением
-
-Проверьте настройки подключения к Notion."""
+Проверьте настройки подключения."""
     
     if not data:
-        return """🧪 Диагностика Notion
+        return """🧪 Данные для ИИ
 
-⚠️ Подключение к Notion успешно, но база данных пуста
-
-Возможные причины:
-• В базе данных нет записей
-• База данных не содержит страниц
-
-Проверьте содержимое базы данных."""
+⚠️ База данных пуста или нет доступных данных"""
     
-    # Форматируем данные для отображения
-    message = "🧪 Диагностика Notion\n\n📊 Все данные из базы:\n\n"
+    # Создаем структурированный вывод
+    message = "🧪 Данные из Notion для ИИ\n\n"
+    message += "=== СТРУКТУРИРОВАННЫЕ ДАННЫЕ ===\n\n"
     
-    for i, page in enumerate(data, 1):
-        message += f"📄 Запись {i}: {page['page_title']}\n"
-        message += f"   ID: {page['page_id'][:8]}...\n"
-        message += f"   Колонки: {', '.join(page['properties'].keys())}\n\n"
+    # JSON формат для ИИ
+    message += "```json\n"
+    message += "[\n"
     
-    message += f"✅ Всего записей: {len(data)}"
+    for i, page in enumerate(data):
+        message += "  {\n"
+        message += f'    "id": "{page["id"]}",\n'
+        message += f'    "title": "{page["title"]}",\n'
+        message += '    "properties": {\n'
+        
+        for j, (prop_name, prop_value) in enumerate(page["properties"].items()):
+            if isinstance(prop_value, str):
+                message += f'      "{prop_name}": "{prop_value}"'
+            else:
+                message += f'      "{prop_name}": {prop_value}'
+            
+            if j < len(page["properties"]) - 1:
+                message += ","
+            message += "\n"
+        
+        message += "    }\n"
+        message += "  }"
+        
+        if i < len(data) - 1:
+            message += ","
+        message += "\n"
+    
+    message += "]\n"
+    message += "```\n\n"
+    
+    # Краткая статистика
+    message += "=== СТАТИСТИКА ===\n"
+    message += f"📊 Всего записей: {len(data)}\n"
+    message += f"📋 Колонок: {len(data[0]['properties']) if data else 0}\n"
+    message += f"🏷️ Названия колонок: {', '.join(data[0]['properties'].keys()) if data else 'Нет данных'}\n\n"
+    
+    message += "✅ Данные готовы для обработки ИИ"
     
     return message
 
@@ -449,7 +550,7 @@ def webhook():
                     
                     # Тест Notion
                     'test_notion': {
-                        'text': format_all_notion_data(),
+                        'text': format_data_for_ai_display(),
                         'keyboard': create_main_menu()
                     },
                     
