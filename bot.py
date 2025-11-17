@@ -211,6 +211,90 @@ def get_notion_test_message():
     
     return message
 
+def get_notion_json_data():
+    """Получает все данные из Notion в формате JSON"""
+    # Проверяем наличие токена и ID базы
+    if not NOTION_TOKEN or not NOTION_DATABASE_ID:
+        print("❌ Notion credentials не настроены")
+        return None
+
+    try:
+        url = f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query"
+        headers = {
+            "Authorization": f"Bearer {NOTION_TOKEN}",
+            "Notion-Version": "2022-06-28",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.post(url, headers=headers, json={})
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            print(f"❌ Notion API error: {response.status_code}")
+            print(f"Response: {response.text}")
+            return None
+            
+    except Exception as e:
+        print(f"❌ Error getting Notion JSON data: {e}")
+        return None
+
+def format_notion_json_for_display(json_data):
+    """Форматирует JSON данные для отображения в боте"""
+    if json_data is None:
+        return "❌ Не удалось получить данные из Notion"
+    
+    try:
+        import json as json_module
+        
+        # Создаем упрощенную версию для отображения
+        simplified_data = {
+            "total_pages": len(json_data.get("results", [])),
+            "pages": []
+        }
+        
+        for i, page in enumerate(json_data.get("results", []), 1):
+            page_info = {
+                "page_id": page.get("id", "N/A"),
+                "page_title": "N/A",
+                "properties_count": len(page.get("properties", {})),
+                "property_names": list(page.get("properties", {}).keys())
+            }
+            
+            # Получаем название страницы
+            properties = page.get("properties", {})
+            for prop_name, prop_data in properties.items():
+                if prop_data.get("type") == "title":
+                    title_items = prop_data.get("title", [])
+                    if title_items:
+                        page_info["page_title"] = title_items[0].get("plain_text", "N/A")
+                    break
+            
+            simplified_data["pages"].append(page_info)
+        
+        # Форматируем JSON для отображения
+        json_str = json_module.dumps(simplified_data, indent=2, ensure_ascii=False)
+        
+        # Разбиваем на части, если слишком длинный
+        if len(json_str) > 3000:
+            # Показываем только первую часть с информацией о структуре
+            message = "🧪 JSON данные из Notion\n\n📊 Структура данных:\n```json\n"
+            message += json_module.dumps({
+                "total_pages": simplified_data["total_pages"],
+                "sample_page": simplified_data["pages"][0] if simplified_data["pages"] else {}
+            }, indent=2, ensure_ascii=False)
+            message += "\n```\n⚠️ Данные слишком большие для отображения. Полный JSON сохранен в логах."
+        else:
+            message = "🧪 JSON данные из Notion\n\n📊 Все данные в формате JSON:\n```json\n"
+            message += json_str
+            message += "\n```"
+        
+        return message
+        
+    except Exception as e:
+        print(f"❌ Error formatting JSON: {e}")
+        return "❌ Ошибка форматирования JSON данных"
+
 def get_btc_price():
     """Получает текущий курс биткоина с CoinGecko"""
     try:
@@ -313,6 +397,14 @@ def create_main_menu():
                 "ActionType": "reply",
                 "ActionBody": "test_notion",
                 "Text": "🧪 Тест Notion",
+                "TextSize": "large",
+                "Columns": 2,
+                "Rows": 1
+            },
+            {
+                "ActionType": "reply",
+                "ActionBody": "notion_json",
+                "Text": "📊 JSON Notion",
                 "TextSize": "large",
                 "Columns": 2,
                 "Rows": 1
@@ -450,6 +542,12 @@ def webhook():
                     # Тест Notion
                     'test_notion': {
                         'text': format_all_notion_data(),
+                        'keyboard': create_main_menu()
+                    },
+                    
+                    # JSON данные из Notion
+                    'notion_json': {
+                        'text': format_notion_json_for_display(get_notion_json_data()),
                         'keyboard': create_main_menu()
                     },
                     
