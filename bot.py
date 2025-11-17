@@ -25,6 +25,104 @@ print(f"🔐 Authorized users: {len(AUTHORIZED_USER_IDS)}")
 NOTION_TOKEN = os.environ.get('NOTION_TOKEN')
 NOTION_DATABASE_ID = os.environ.get('NOTION_DATABASE_ID')
 
+def get_all_notion_data():
+    """Получает ВСЕ данные из Notion БД для диагностики"""
+    # Проверяем наличие токена и ID базы
+    if not NOTION_TOKEN or not NOTION_DATABASE_ID:
+        print("❌ Notion credentials не настроены")
+        return None
+
+    try:
+        url = f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query"
+        headers = {
+            "Authorization": f"Bearer {NOTION_TOKEN}",
+            "Notion-Version": "2022-06-28",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.post(url, headers=headers, json={})
+        
+        if response.status_code == 200:
+            data = response.json()
+            all_data = []
+            
+            print(f"📊 Total pages in DB: {len(data.get('results', []))}")
+            
+            for i, page in enumerate(data.get("results", []), 1):
+                page_info = {
+                    'page_id': page.get('id', 'N/A'),
+                    'page_title': 'N/A',
+                    'properties': {}
+                }
+                
+                # Получаем название страницы
+                properties = page.get("properties", {})
+                for prop_name, prop_data in properties.items():
+                    page_info['properties'][prop_name] = {
+                        'type': prop_data.get('type', 'unknown'),
+                        'value': prop_data
+                    }
+                
+                    # Пытаемся найти название страницы (обычно в первой текстовой колонке)
+                    if prop_data.get('type') == 'title' and not page_info['page_title']:
+                        title_items = prop_data.get('title', [])
+                        if title_items:
+                            page_info['page_title'] = title_items[0].get('plain_text', 'N/A')
+                
+                all_data.append(page_info)
+                print(f"📄 Page {i}: {page_info['page_title']}")
+                print(f"   Properties: {list(page_info['properties'].keys())}")
+            
+            return all_data
+        else:
+            print(f"❌ Notion API error: {response.status_code}")
+            print(f"Response: {response.text}")
+            return None
+            
+    except Exception as e:
+        print(f"❌ Error getting Notion data: {e}")
+        return None
+
+def format_all_notion_data():
+    """Форматирует все данные из Notion для отображения в боте"""
+    data = get_all_notion_data()
+    
+    if data is None:
+        return """🧪 Диагностика Notion
+
+❌ Не удалось получить данные из Notion
+
+Возможные причины:
+• Неверный токен API
+• Неверный ID базы данных
+• Нет доступа к базе данных
+• Проблемы с подключением
+
+Проверьте настройки подключения к Notion."""
+    
+    if not data:
+        return """🧪 Диагностика Notion
+
+⚠️ Подключение к Notion успешно, но база данных пуста
+
+Возможные причины:
+• В базе данных нет записей
+• База данных не содержит страниц
+
+Проверьте содержимое базы данных."""
+    
+    # Форматируем данные для отображения
+    message = "🧪 Диагностика Notion\n\n📊 Все данные из базы:\n\n"
+    
+    for i, page in enumerate(data, 1):
+        message += f"📄 Запись {i}: {page['page_title']}\n"
+        message += f"   ID: {page['page_id'][:8]}...\n"
+        message += f"   Колонки: {', '.join(page['properties'].keys())}\n\n"
+    
+    message += f"✅ Всего записей: {len(data)}"
+    
+    return message
+
 def get_notion_profits():
     """Получает данные из колонки 'Текущая прибыль' из Notion БД"""
     # Проверяем наличие токена и ID базы
@@ -351,7 +449,7 @@ def webhook():
                     
                     # Тест Notion
                     'test_notion': {
-                        'text': get_notion_test_message(),
+                        'text': format_all_notion_data(),
                         'keyboard': create_main_menu()
                     },
                     
