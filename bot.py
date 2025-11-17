@@ -164,6 +164,110 @@ def get_notion_data_for_ai():
         print(f"❌ Error getting Notion data for AI: {e}")
         return None
 
+def get_notion_data_for_ai():
+    """Получает данные из Notion с минимальной нагрузкой для ИИ обработки"""
+    print(f"🔍 Checking Notion credentials...")
+    print(f"   Token exists: {'Yes' if NOTION_TOKEN else 'No'}")
+    print(f"   DB ID exists: {'Yes' if NOTION_DATABASE_ID else 'No'}")
+    
+    if not NOTION_TOKEN:
+        print("❌ NOTION_TOKEN not set")
+        return None
+
+    if not NOTION_DATABASE_ID:
+        print("❌ NOTION_DATABASE_ID not set")
+        return None
+
+    try:
+        print(f"🌐 Making request to Notion API...")
+        url = f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query"
+        headers = {
+            "Authorization": f"Bearer {NOTION_TOKEN}",
+            "Notion-Version": "2022-06-28",
+            "Content-Type": "application/json"
+        }
+        
+        # Ограничиваем количество записей для минимальной нагрузки
+        payload = {
+            "page_size": 50  # Максимум 50 записей за раз
+        }
+        
+        print(f"📡 Sending POST request to: {url}")
+        response = requests.post(url, headers=headers, json=payload, timeout=10)
+        
+        print(f"📥 Response status: {response.status_code}")
+        
+        if response.status_code == 200:
+            data = response.json()
+            results = data.get("results", [])
+            print(f"✅ Success! Got {len(results)} records")
+            
+            structured_data = []
+            
+            for page in results:
+                page_data = {
+                    "id": page.get('id'),
+                    "title": "Untitled",
+                    "properties": {}
+                }
+                
+                # Получаем основные свойства
+                properties = page.get("properties", {})
+                for prop_name, prop_data in properties.items():
+                    prop_type = prop_data.get('type')
+                    
+                    # Извлекаем значение в зависимости от типа
+                    if prop_type == 'title':
+                        title_items = prop_data.get('title', [])
+                        if title_items:
+                            page_data["title"] = title_items[0].get('plain_text', 'Untitled')
+                    
+                    elif prop_type == 'number':
+                        page_data["properties"][prop_name] = prop_data.get('number')
+                    
+                    elif prop_type == 'text' or prop_type == 'rich_text':
+                        text_items = prop_data.get(prop_type, [])
+                        if text_items:
+                            page_data["properties"][prop_name] = text_items[0].get('plain_text', '')
+                    
+                    elif prop_type == 'date':
+                        date_obj = prop_data.get('date', {})
+                        page_data["properties"][prop_name] = date_obj.get('start', '')
+                    
+                    elif prop_type == 'select':
+                        select_obj = prop_data.get('select', {})
+                        page_data["properties"][prop_name] = select_obj.get('name', '')
+                    
+                    elif prop_type == 'checkbox':
+                        page_data["properties"][prop_name] = prop_data.get('checkbox', False)
+                    
+                    elif prop_type == 'formula':
+                        formula_result = prop_data.get('formula', {})
+                        page_data["properties"][prop_name] = formula_result.get('number', 0)
+                    
+                    else:
+                        # Для остальных типов сохраняем как есть
+                        page_data["properties"][prop_name] = str(prop_data)
+                
+                structured_data.append(page_data)
+            
+            return structured_data
+            
+        else:
+            print(f"❌ Notion API error: {response.status_code}")
+            print(f"Response text: {response.text}")
+            return None
+            
+    except requests.exceptions.Timeout:
+        print("⏰ Request timeout")
+        return None
+    except requests.exceptions.ConnectionError:
+        print("🔌 Connection error")
+        return None
+    except Exception as e:
+        print(f"❌ Error getting Notion data for AI: {e}")
+        return None
+
 def format_data_for_ai_display():
     """Форматирует данные для отображения в боте в формате для ИИ"""
     data = get_notion_data_for_ai()
