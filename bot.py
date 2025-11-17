@@ -18,106 +18,9 @@ AUTHORIZED_USER_IDS = [
 # Глобальная переменная для хранения последнего курса
 current_btc_price = None
 
-# Notion конфигурация (переменные окружения GitHub)
-NOTION_TOKEN = os.environ.get('NOTION_TOKEN')
-NOTION_DATABASE_ID = os.environ.get('NOTION_DATABASE_ID')
-
-# Проверяем наличие обязательных переменных
-if not NOTION_TOKEN:
-    print("❌ NOTION_TOKEN не установлен в переменных окружения")
-    print("💡 Добавьте переменную NOTION_TOKEN в GitHub Secrets")
-    
-if not NOTION_DATABASE_ID:
-    print("❌ NOTION_DATABASE_ID не установлен в переменных окружения") 
-    print("💡 Добавьте переменную NOTION_DATABASE_ID в GitHub Secrets")
-
 print("🤖 Private Viber Bot starting...")
 print(f"🔐 Authorized users: {len(AUTHORIZED_USER_IDS)}")
 
-def get_notion_profits():
-    """Получает данные из колонки 'Текущая прибыль' из Notion БД"""
-    # Проверяем наличие токена и ID базы
-    if not NOTION_TOKEN or not NOTION_DATABASE_ID:
-        print("❌ Notion credentials не настроены")
-        return None
-
-    try:
-        url = f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query"
-        headers = {
-            "Authorization": f"Bearer {NOTION_TOKEN}",
-            "Notion-Version": "2022-06-28",
-            "Content-Type": "application/json"
-        }
-        
-        response = requests.post(url, headers=headers, json={})
-        
-        if response.status_code == 200:
-            data = response.json()
-            profits = []
-            
-            for page in data.get("results", []):
-                # Получаем свойства страницы
-                properties = page.get("properties", {})
-                
-                # Ищем колонку "Текущая прибыль"
-                if "Текущая прибыль" in properties:
-                    profit_property = properties["Текущая прибыль"]
-                    
-                    # Извлекаем значение в зависимости от типа
-                    if profit_property.get("type") == "number":
-                        profit_value = profit_property.get("number")
-                        if profit_value is not None:
-                            profits.append(f"${profit_value:,.2f}")
-                    elif profit_property.get("type") == "formula":
-                        formula_result = profit_property.get("formula", {}).get("number")
-                        if formula_result is not None:
-                            profits.append(f"${formula_result:,.2f}")
-            
-            return profits
-        else:
-            print(f"❌ Notion API error: {response.status_code}")
-            print(f"Response: {response.text}")
-            return None
-            
-def get_notion_test_message():
-    """Получает и форматирует данные из Notion для отображения"""
-    profits = get_notion_profits()
-    
-    if profits is None:
-        return """🧪 Тест Notion
-
-❌ Не удалось получить данные из Notion
-
-Возможные причины:
-• Неверный токен API
-• Неверный ID базы данных
-• Нет доступа к базе данных
-• Колонка "Текущая прибыль" не найдена
-
-Проверьте настройки подключения к Notion."""
-    
-    if not profits:
-        return """🧪 Тест Notion
-
-⚠️ Подключение к Notion успешно, но данные не найдены
-
-Возможные причины:
-• База данных пуста
-• Колонка "Текущая прибыль" пуста
-• Неверное название колонки
-
-Проверьте структуру базы данных."""
-    
-    # Форматируем данные для отображения
-    message = "🧪 Тест Notion\n\n📊 Данные из колонки 'Текущая прибыль':\n\n"
-    
-    for i, profit in enumerate(profits, 1):
-        message += f"• Запись {i}: {profit}\n"
-    
-    message += f"\n✅ Найдено записей: {len(profits)}"
-    
-    return message
-            
 def get_btc_price():
     """Получает текущий курс биткоина с CoinGecko"""
     try:
@@ -173,7 +76,7 @@ def send_btc_updates():
         success_count = 0
         # Отправляем всем авторизованным пользователям
         for user_id in AUTHORIZED_USER_IDS:
-            if send_message(user_id, message, create_main_menu()):
+            if send_message(user_id, message, create_main_keyboard()):
                 success_count += 1
                 print(f"📤 Sent BTC price to {user_id[:8]}...")
             else:
@@ -189,117 +92,37 @@ def btc_scheduler():
     while True:
         try:
             send_btc_updates()
-            time.sleep(30)  # Каждые 30 секунд
+            time.sleep(300)  # Каждые 30 секунд
         except Exception as e:
             print(f"❌ Error in BTC scheduler: {e}")
             time.sleep(30)  # При ошибке тоже ждем 30 секунд
 
-def create_main_menu():
-    """Создает главное меню с категориями"""
+def create_main_keyboard():
+    """Создает главную клавиатуру с кнопками"""
     return {
         "Type": "keyboard",
         "DefaultHeight": False,
         "Buttons": [
             {
                 "ActionType": "reply",
-                "ActionBody": "menu_crypto",
-                "Text": "₿ Крипто",
-                "TextSize": "large",
-                "Columns": 3,
-                "Rows": 1
+                "ActionBody": "новая_заметка",
+                "Text": "📝 Новая заметка",
+                "TextSize": "regular",
+                "Columns": 1
+            },
+            {
+                "ActionType": "reply", 
+                "ActionBody": "криптоотчет",
+                "Text": "📊 Криптоотчет",
+                "TextSize": "regular",
+                "Columns": 1
             },
             {
                 "ActionType": "reply",
-                "ActionBody": "menu_info",
-                "Text": "ℹ️ Инфо",
-                "TextSize": "large", 
-                "Columns": 3,
-                "Rows": 1
-            },
-            {
-                "ActionType": "reply",
-                "ActionBody": "test_notion",
-                "Text": "🧪 Тест Notion",
-                "TextSize": "large",
-                "Columns": 3,
-                "Rows": 1
-            }
-
-        ],
-        "ButtonSize": "large"
-    }
-
-def create_crypto_menu():
-    """Создает меню криптовалют"""
-    return {
-        "Type": "keyboard",
-        "DefaultHeight": False,
-        "Buttons": [
-            {
-                "ActionType": "reply",
-                "ActionBody": "crypto_view",
-                "Text": "👁️ Просмотр",
+                "ActionBody": "расписание", 
+                "Text": "📅 Расписание",
                 "TextSize": "regular",
-                "Columns": 3,
-                "Rows": 1
-            },
-            {
-                "ActionType": "reply",
-                "ActionBody": "back_to_main",
-                "Text": "⬅️ Назад",
-                "TextSize": "regular",
-                "Columns": 1,
-                "Rows": 1
-            },
-            {
-                "ActionType": "reply",
-                "ActionBody": "crypto_months",
-                "Text": "📆 По месяцам",
-                "TextSize": "regular",
-                "Columns": 2,
-                "Rows": 1
-            }
-        ],
-        "ButtonSize": "regular"
-    }
-
-def create_info_menu():
-    """Создает меню информации"""
-    return {
-        "Type": "keyboard",
-        "DefaultHeight": False,
-        "Buttons": [
-            {
-                "ActionType": "reply",
-                "ActionBody": "back_to_main",
-                "Text": "⬅️ Назад",
-                "TextSize": "regular",
-                "Columns": 1,
-                "Rows": 1
-            },
-            {
-                "ActionType": "reply",
-                "ActionBody": "info_schedule",
-                "Text": "⏰ Расписание",
-                "TextSize": "regular",
-                "Columns": 2,
-                "Rows": 1
-            },
-            {
-                "ActionType": "reply",
-                "ActionBody": "info_weather",
-                "Text": "🌤️ Погода",
-                "TextSize": "regular",
-                "Columns": 2,
-                "Rows": 1
-            },
-            {
-                "ActionType": "reply",
-                "ActionBody": "info_news",
-                "Text": "📰 Новости",
-                "TextSize": "regular",
-                "Columns": 2,
-                "Rows": 1
+                "Columns": 1
             }
         ],
         "ButtonSize": "regular"
@@ -335,87 +158,26 @@ def webhook():
             if data.get('event') == 'message' and data['message']['type'] == 'text':
                 message_text = data['message']['text'].lower()
                 
-                # Обработка навигации по меню
-                menu_responses = {
-                    # Главное меню
-                    'меню': {
-                        'text': '🏠 Главное меню\n\nВыберите нужную категорию:',
-                        'keyboard': create_main_menu()
+                # Обработка нажатий на кнопки
+                button_responses = {
+                    'новая_заметка': {
+                        'text': '📝 Функция "Новая заметка" будет добавлена позже!\n\nПока что можете писать заметки вручную.',
+                        'keyboard': create_main_keyboard()
                     },
-                    
-                    # Крипто меню
-                    'menu_crypto': {
-                        'text': '₿ Криптовалюты\n\nВыберите действие:',
-                        'keyboard': create_crypto_menu()
+                    'криптоотчет': {
+                        'text': f'📊 Криптоотчет\n\n💰 BTC: ${current_btc_price:,.2f}\n\n📈 24ч изменение будет добавлено позже!',
+                        'keyboard': create_main_keyboard()
                     },
-                    
-                    # Инфо меню  
-                    'menu_info': {
-                        'text': 'ℹ️ Информация\n\nВыберите раздел:',
-                        'keyboard': create_info_menu()
-                    },
-                    
-                    # Тест Notion
-                    'test_notion': {
-                        'text': get_notion_test_message(),
-                        'keyboard': create_main_menu()
-                    },
-                    
-                    # Назад в главное меню
-                    'back_to_main': {
-                        'text': '🏠 Возвращаемся в главное меню',
-                        'keyboard': create_main_menu()
-                    },
-                    
-                    # Крипто функции
-                    'crypto_view': {
-                        'text': f'👁️ Просмотр курсов\n\n💰 Bitcoin: ${current_btc_price:,.2f}\n\n🔄 Обновляется каждые 30 секунд',
-                        'keyboard': create_crypto_menu()
-                    },
-                    'crypto_today': {
-                        'text': '📊 Статистика за сегодня\n\n💰 Bitcoin: данные за сегодня будут добавлены позже',
-                        'keyboard': create_crypto_menu()
-                    },
-                    'crypto_week': {
-                        'text': '📈 Статистика за неделю\n\n💰 Bitcoin: данные за неделю будут добавлены позже',
-                        'keyboard': create_crypto_menu()
-                    },
-                    'crypto_month': {
-                        'text': '📅 Статистика за месяц\n\n💰 Bitcoin: данные за месяц будут добавлены позже',
-                        'keyboard': create_crypto_menu()
-                    },
-                    'crypto_months': {
-                        'text': '📆 Статистика по месяцам\n\n💰 Bitcoin: данные по месяцам будут добавлены позже',
-                        'keyboard': create_crypto_menu()
-                    },
-                    'crypto_year': {
-                        'text': '📊 Статистика за год\n\n💰 Bitcoin: данные за год будут добавлены позже',
-                        'keyboard': create_crypto_menu()
-                    },
-                    'crypto_alltime': {
-                        'text': '🕰️ Статистика за все время\n\n💰 Bitcoin: данные за все время будут добавлены позже',
-                        'keyboard': create_crypto_menu()
-                    },
-                    
-                    # Инфо функции
-                    'info_schedule': {
-                        'text': '⏰ Расписание уведомлений\n\n🕒 Курс Bitcoin - каждые 30 секунд\n\n⏰ Дополнительные уведомления будут добавлены позже',
-                        'keyboard': create_info_menu()
-                    },
-                    'info_weather': {
-                        'text': '🌤️ Погода\n\nФункция погоды будет добавлена позже',
-                        'keyboard': create_info_menu()
-                    },
-                    'info_news': {
-                        'text': '📰 Новости\n\nФункция новостей будет добавлена позже',
-                        'keyboard': create_info_menu()
-                    },
+                    'расписание': {
+                        'text': '📅 Расписание уведомлений\n\n🕒 Курс BTC - каждые 30 секунд\n\n⏰ Дополнительные уведомления будут добавлены позже!',
+                        'keyboard': create_main_keyboard()
+                    }
                 }
                 
-                # Проверяем команды меню
-                if message_text in menu_responses:
-                    menu_data = menu_responses[message_text]
-                    send_message(user_id, menu_data['text'], menu_data['keyboard'])
+                # Проверяем нажатия на кнопки
+                if message_text in button_responses:
+                    button_data = button_responses[message_text]
+                    send_message(user_id, button_data['text'], button_data['keyboard'])
                 else:
                     # Обычные команды
                     responses = {
@@ -423,32 +185,30 @@ def webhook():
                         'портфель': '💰 Портфель: 1.2 BTC, 5.3 ETH',
                         'цена btc': f'📈 BTC: ${current_btc_price:,.2f}' if current_btc_price else '📈 Курс BTC временно недоступен',
                         'курс': f'💰 Текущий курс BTC: ${current_btc_price:,.2f}' if current_btc_price else '💰 Курс временно недоступен',
-                        'команды': '🛠 Используйте кнопки меню или команды: привет, портфель, цена btc, курс, статус, btc, меню',
+                        'команды': '🛠 Команды: привет, портфель, цена btc, курс, статус, btc',
                         'мой id': f'🆔 Ваш ID: {user_id}',
                         'статус': '✅ Бот работает в штатном режиме с авто-обновлением курса BTC каждые 30 секунд',
-                        'btc': f'₿ Bitcoin:\n💰 ${current_btc_price:,.2f}\n⏰ Обновляется каждые 30 секунд' if current_btc_price else '₿ Bitcoin: курс временно недоступен',
-                        'меню': '🏠 Главное меню\n\nИспользуйте кнопки для навигации'
+                        'btc': f'₿ Bitcoin:\n💰 ${current_btc_price:,.2f}\n⏰ Обновляется каждые 30 секунд' if current_btc_price else '₿ Bitcoin: курс временно недоступен'
                     }
                     
-                    response_text = responses.get(message_text, f'🤔 Не понял: {message_text}\n\n💡 Введите "меню" для открытия главного меню')
-                    send_message(user_id, response_text, create_main_menu())
+                    response_text = responses.get(message_text, f'🤔 Не понял: {message_text}')
+                    send_message(user_id, response_text, create_main_keyboard())
             
             elif data.get('event') == 'conversation_started':
                 welcome_msg = """🔐 Добро пожаловать в приватный крипто-бот!
 
 Я буду присылать вам курс Bitcoin каждые 30 секунд!
 
-🏠 Используйте главное меню для навигации:
-• ₿ Крипто - курсы и статистика
-• ℹ️ Инфо - расписание, погода, новости
-• 🧪 Тест Notion - проверка подключения к базе торговых данных
+🛠 Используйте кнопки ниже для навигации:
+• 📝 Новая заметка - создать заметку
+• 📊 Криптоотчет - посмотреть отчет
+• 📅 Расписание - настройки уведомлений
 
 💰 Также доступны команды:
 • цена btc - текущий курс
 • курс - курс Bitcoin
-• btc - информация о Bitcoin
-• меню - открыть главное меню"""
-                send_message(user_id, welcome_msg, create_main_menu())
+• btc - информация о Bitcoin"""
+                send_message(user_id, welcome_msg, create_main_keyboard())
             
             return jsonify({"status": 0})
             
