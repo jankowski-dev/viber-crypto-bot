@@ -3,12 +3,179 @@ import requests
 import os
 import threading
 import time
+import json
+import uuid
 from datetime import datetime
+from pathlib import Path
 
 app = Flask(__name__)
 
 VIBER_TOKEN = os.environ.get('VIBER_TOKEN')
 PORT = os.environ.get('PORT', 5000)
+
+# Папка для временных файлов
+TEMP_FILES_DIR = "temp_files"
+
+# Создаем папку если не существует
+Path(TEMP_FILES_DIR).mkdir(exist_ok=True)
+
+def save_notion_data_to_file(json_data):
+    """Сохраняет данные Notion в файл и возвращает путь к файлу"""
+    try:
+        # Генерируем уникальное имя файла
+        file_id = str(uuid.uuid4())
+        filename = f"notion_export_{file_id}.txt"
+        filepath = os.path.join(TEMP_FILES_DIR, filename)
+        
+        # Форматируем JSON для красивого вывода
+        formatted_json = json.dumps(json_data, indent=2, ensure_ascii=False)
+        
+        # Сохраняем в файл
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write("=== ЭКСПОРТ ДАННЫХ NOTION ===\n")
+            f.write(f"Время экспорта: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"Количество страниц: {len(json_data.get('results', []))}\n")
+            f.write("=" * 50 + "\n\n")
+            f.write(formatted_json)
+        
+        print(f"✅ Файл сохранен: {filepath} ({os.path.getsize(filepath)} байт)")
+        return filepath
+        
+    except Exception as e:
+        print(f"❌ Ошибка сохранения файла: {e}")
+        return None
+
+def cleanup_old_files(max_age_hours=1):
+    """Удаляет старые файлы (старше max_age_hours)"""
+    try:
+        current_time = time.time()
+        deleted_count = 0
+        
+        for filename in os.listdir(TEMP_FILES_DIR):
+            filepath = os.path.join(TEMP_FILES_DIR, filename)
+            if os.path.isfile(filepath):
+                file_age = current_time - os.path.getmtime(filepath)
+                if file_age > max_age_hours * 3600:  # Конвертируем часы в секунды
+                    os.remove(filepath)
+                    deleted_count += 1
+                    print(f"🗑️ Удален старый файл: {filename}")
+        
+        if deleted_count > 0:
+            print(f"✅ Удалено {deleted_count} старых файлов")
+            
+    except Exception as e:
+        print(f"❌ Ошибка очистки файлов: {e}")
+
+def get_file_size_mb(filepath):
+    """Возвращает размер файла в МБ"""
+    try:
+        size_bytes = os.path.getsize(filepath)
+        return round(size_bytes / (1024 * 1024), 2)
+    except:
+        return 0
+
+def handle_notion_export(user_id):
+    """Обрабатывает запрос на экспорт данных Notion в файл"""
+    try:
+        # Отправляем сообщение о начале процесса
+        send_message(user_id, "🔄 Начинаем экспорт данных из Notion в файл...\n⏳ Это может занять несколько секунд")
+        
+        # Выполняем экспорт
+        filepath = export_notion_to_file()
+        
+        if filepath:
+            file_size = get_file_size_mb(filepath)
+            filename = f"notion_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            
+            # Отправляем файл
+            if send_file_message(user_id, filepath, filename):
+                send_message(user_id, f"✅ Экспорт завершен!\n📂 Файл отправлен: {filename}\n📊 Размер: {file_size}MB\n\n📝 Файл содержит все данные из вашей базы Notion в формате JSON")
+                result_text = "✅ Экспорт завершен успешно!"
+            else:
+                send_message(user_id, "❌ Не удалось отправить файл. Возможно, файл слишком большой или произошла ошибка отправки.")
+                result_text = "❌ Ошибка отправки файла"
+            
+            # Очищаем старые файлы после успешной отправки
+            cleanup_old_files()
+            return result_text
+        else:
+            send_message(user_id, "❌ Не удалось создать файл с данными Notion. Проверьте настройки подключения к Notion.")
+            return "❌ Ошибка создания файла"
+            
+    except Exception as e:
+        print(f"❌ Error in handle_notion_export: {e}")
+        send_message(user_id, "❌ Произошла ошибка при экспорте данных. Попробуйте позже.")
+        return "❌ Ошибка процесса экспорта"
+
+def export_notion_to_file():
+    """Экспортирует данные Notion в файл и возвращает путь к файлу"""
+    print("🔄 Начинаем экспорт данных Notion в файл...")
+    
+    # Получаем данные из Notion
+    json_data = get_notion_json_data()
+    
+    if json_data is None:
+        print("❌ Не удалось получить данные из Notion")
+        return None
+
+    # Сохраняем в файл
+    filepath = save_notion_data_to_file(json_data)
+    
+    if filepath:
+        file_size = get_file_size_mb(filepath)
+        print(f"✅ Экспорт завершен: {filepath} ({file_size}MB)")
+        return filepath
+    else:
+        print("❌ Ошибка сохранения файла")
+        return None
+    """Экспортирует данные Notion в файл и возвращает путь к файлу"""
+    print("🔄 Начинаем экспорт данных Notion в файл...")
+
+    # Получаем данные из Notion
+    json_data = get_notion_json_data()
+    
+    if json_data is None:
+        print("❌ Не удалось получить данные из Notion")
+        return None
+
+    # Сохраняем в файл
+    filepath = save_notion_data_to_file(json_data)
+    
+    if filepath:
+        file_size = get_file_size_mb(filepath)
+        print(f"✅ Экспорт завершен: {filepath} ({file_size}MB)")
+        return filepath
+    else:
+        print("❌ Ошибка сохранения файла")
+        return None
+
+def handle_notion_export(user_id):
+    """Обрабатывает запрос на экспорт данных Notion в файл"""
+    try:
+        # Отправляем сообщение о начале процесса
+        send_message(user_id, "🔄 Начинаем экспорт данных из Notion в файл...\n⏳ Это может занять несколько секунд")
+        
+        # Выполняем экспорт
+        filepath = export_notion_to_file()
+        
+        if filepath:
+            file_size = get_file_size_mb(filepath)
+            filename = f"notion_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+            
+            # Отправляем файл
+            if send_file_message(user_id, filepath, filename):
+                send_message(user_id, f"✅ Экспорт завершен!\n📁 Файл отправлен: {filename}\n📊 Размер: {file_size}MB\n\n💡 Файл содержит все данные из вашей базы Notion в формате JSON")
+            else:
+                send_message(user_id, "❌ Не удалось отправить файл. Возможно, файл слишком большой или произошла ошибка отправки.")
+            
+            # Очищаем старые файлы после успешной отправки
+            cleanup_old_files()
+        else:
+            send_message(user_id, "❌ Не удалось создать файл с данными Notion. Проверьте настройки подключения к Notion.")
+            
+    except Exception as e:
+        print(f"❌ Error in handle_notion_export: {e}")
+        send_message(user_id, "❌ Произошла ошибка при экспорте данных. Попробуйте позже.")
 
 # ⚠️ ЗАМЕНИТЕ НА ВАШ РЕАЛЬНЫЙ USER_ID
 AUTHORIZED_USER_IDS = [
@@ -382,7 +549,7 @@ def create_main_menu():
                 "ActionBody": "menu_crypto",
                 "Text": "₿ Крипто",
                 "TextSize": "large",
-                "Columns": 2,
+                "Columns": 3,
                 "Rows": 1
             },
             {
@@ -390,7 +557,7 @@ def create_main_menu():
                 "ActionBody": "menu_info",
                 "Text": "ℹ️ Инфо",
                 "TextSize": "large", 
-                "Columns": 2,
+                "Columns": 3,
                 "Rows": 1
             },
             {
@@ -398,7 +565,7 @@ def create_main_menu():
                 "ActionBody": "test_notion",
                 "Text": "🧪 Тест Notion",
                 "TextSize": "large",
-                "Columns": 2,
+                "Columns": 3,
                 "Rows": 1
             },
             {
@@ -406,7 +573,15 @@ def create_main_menu():
                 "ActionBody": "notion_json",
                 "Text": "📊 JSON Notion",
                 "TextSize": "large",
-                "Columns": 2,
+                "Columns": 3,
+                "Rows": 1
+            },
+            {
+                "ActionType": "reply",
+                "ActionBody": "export_notion",
+                "Text": "📂 Экспорт в файл",
+                "TextSize": "large",
+                "Columns": 3,
                 "Rows": 1
             }
         ],
@@ -551,6 +726,12 @@ def webhook():
                         'keyboard': create_main_menu()
                     },
                     
+                    # Экспорт в файл
+                    'export_notion': {
+                        'text': handle_notion_export(user_id),
+                        'keyboard': create_main_menu()
+                    },
+                    
                     # Назад в главное меню
                     'back_to_main': {
                         'text': '🏠 Возвращаемся в главное меню',
@@ -664,6 +845,81 @@ def send_message(user_id, text, keyboard=None):
         
     except Exception as e:
         print(f"❌ Send error: {e}")
+        return False
+
+def send_file_message(user_id, filepath, filename=None):
+    """Отправляет файл пользователю через Viber API"""
+    if not VIBER_TOKEN:
+        print("❌ VIBER_TOKEN not set in environment variables")
+        return False
+    
+    if not os.path.exists(filepath):
+        print(f"❌ File not found: {filepath}")
+        return False
+    
+    try:
+        # Получаем размер файла
+        file_size = os.path.getsize(filepath)
+        file_size_mb = file_size / (1024 * 1024)
+        
+        # Проверяем лимит Viber (обычно 20MB)
+        if file_size_mb > 20:
+            print(f"❌ File too large: {file_size_mb:.2f}MB (max 20MB)")
+            return False
+        
+        # Если имя файла не указано, используем базовое имя
+        if not filename:
+            filename = os.path.basename(filepath)
+        
+        # Загружаем файл на сервер Viber
+        upload_url = 'https://chatapi.viber.com/pa/upload_file'
+        headers = {
+            'X-Viber-Auth-Token': VIBER_TOKEN
+        }
+        
+        with open(filepath, 'rb') as f:
+            files = {'file': (filename, f, 'text/plain')}
+            upload_response = requests.post(upload_url, headers=headers, files=files)
+        
+        if upload_response.status_code == 200:
+            upload_result = upload_response.json()
+            if upload_result.get('status') == 0:
+                file_url = upload_result.get('media')
+                
+                # Отправляем сообщение с файлом
+                message_url = 'https://chatapi.viber.com/pa/send_message'
+                message_payload = {
+                    'receiver': user_id,
+                    'type': 'file',
+                    'media': file_url,
+                    'size': file_size,
+                    'file_name': filename
+                }
+                
+                message_response = requests.post(message_url, 
+                                                json=message_payload, 
+                                                headers={'X-Viber-Auth-Token': VIBER_TOKEN, 'Content-Type': 'application/json'})
+                
+                if message_response.status_code == 200:
+                    result = message_response.json()
+                    if result.get('status') == 0:
+                        print(f"📁 File sent to {user_id[:8]}...: {filename} ({file_size_mb:.2f}MB)")
+                        return True
+                    else:
+                        print(f"❌ Viber file message error: {result}")
+                        return False
+                else:
+                    print(f"❌ HTTP error sending file message: {message_response.status_code}")
+                    return False
+            else:
+                print(f"❌ Viber upload error: {upload_result}")
+                return False
+        else:
+            print(f"❌ HTTP upload error: {upload_response.status_code}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ File send error: {e}")
         return False
 
 @app.route('/status')
