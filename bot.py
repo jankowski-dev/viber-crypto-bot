@@ -218,14 +218,14 @@ def get_crypto_data_from_notion_http():
 
 def format_quick_report(data):
     """Формирует строку быстрого отчета, исключая записи с нулевой прибылью/убытком."""
-    if not  # <-- Исправлено: добавлена переменная 'data'
+    if not data: # <-- Исправлено: добавлена переменная 'data'
         logger.info("No data received for quick report.")
         return "❌ Не удалось получить данные для отчета."
 
     logger.info(f"Starting quick report formatting with {len(data)} items.")
     # Фильтрация данных: оставляем только те, у которых current_profit не является 0, 0.0, "0", "0.0", None или NaN.
     filtered_items = []
-    for item in  # <-- Исправлено: добавлена переменная 'data'
+    for item in data: # <-- Исправлено: добавлена переменная 'data'
         raw_profit = item.get('current_profit', 0)
         logger.debug(f"Processing item: {item.get('name', 'N/A')}, raw_profit: {raw_profit}, type: {type(raw_profit)}")
         
@@ -454,7 +454,7 @@ def webhook():
                      if message_text: # Проверяем, было ли это текстовое сообщение
                          logger.info(f"Received unknown action body, treating as text command: {message_text}")
                          # Можно добавить обработку старых команд или игнорировать
-                         send_message_with_keyboard(user_id, f"🤔 Неизвестная команда: {message_text}", get_main_menu_keyboard())
+                         send_message_with_keyboard(user_id, f"🤔 Неизвестная команда: {message_text}, get_main_menu_keyboard())
 
             logger.info("--- Webhook processing finished ---")
             return jsonify({"status": 0})
