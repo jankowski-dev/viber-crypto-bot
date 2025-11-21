@@ -190,12 +190,12 @@ def get_crypto_data_from_notion_http():
             parsed_data.append({
                 "page_id": page_id,
                 "name": name_value, # Используем значение заголовка (или "N/A (Без имени)")
-                "current_profit": current_profit_value,
-                "capitalization": capitalization_usd_value, # Rollup
-                "turnover": turnover_value, # Formula
-                "deposit_pct": deposit_pct_value, # Formula
-                "avg_price": avg_price_value, # Formula
-                "current_price": current_price_rollup_value, # Rollup
+                "current_profit": current_profit_value, # Может быть числом, строкой или None
+                "capitalization": capitalization_usd_value, # Rollup - строка
+                "turnover": turnover_value, # Formula - может быть числом или строкой
+                "deposit_pct": deposit_pct_value, # Formula - может быть числом или строкой
+                "avg_price": avg_price_value, # Formula - может быть числом или строкой
+                "current_price": current_price_rollup_value, # Rollup - строка
                 # Можно добавить и другие, если понадобятся
                 # "other_prop": other_value,
             })
@@ -217,25 +217,30 @@ def get_crypto_data_from_notion_http():
 
 def format_quick_report(data):
     """Формирует строку быстрого отчета."""
-    if not data: # <-- Исправлено: добавлена переменная 'data'
+    if not data:
         return "❌ Не удалось получить данные для отчета."
     report_lines = ["📈 Быстрый отчет по криптосчетам:\n"]
     total_profit = 0
-    for item in data: # <-- Исправлено: добавлена переменная 'data'
+    for item in data:
         profit = item.get('current_profit', 0)
-        # Проверяем, является ли значение числом, прежде чем складывать
+        # Проверяем, является ли значение числом, прежде чем складывать и форматировать
         if profit is not None and isinstance(profit, (int, float)):
              total_profit += profit
-        report_lines.append(f"- {item.get('name', 'N/A')}: {'{:.2f}'.format(profit) if profit is not None else 'N/A'}")
-    report_lines.append(f"\n💰 Сумма текущей прибыли/убытка: {'{:.2f}'.format(total_profit)}")
+             formatted_profit = f"{profit:.2f}"
+        else:
+            # Если не число, используем строковое представление
+            formatted_profit = str(profit) if profit is not None else "N/A"
+
+        report_lines.append(f"- {item.get('name', 'N/A')}: {formatted_profit}")
+    report_lines.append(f"\n💰 Сумма текущей прибыли/убытка: {total_profit:.2f if isinstance(total_profit, (int, float)) else total_profit}")
     return "\n".join(report_lines)
 
 def format_wide_report(data):
     """Формирует строку широкого отчета."""
-    if not data: # <-- Исправлено: добавлена переменная 'data'
+    if not data:
         return "❌ Не удалось получить данные для отчета."
     report_lines = ["📊 Широкий отчет по криптосчетам:\n"]
-    for item in data: # <-- Исправлено: добавлена переменная 'data'
+    for item in data:
         name = item.get('name', 'N/A')
         profit = item.get('current_profit', 'N/A')
         cap = item.get('capitalization', 'N/A')
@@ -244,14 +249,22 @@ def format_wide_report(data):
         avg_price = item.get('avg_price', 'N/A')
         current_price = item.get('current_price', 'N/A')
 
+        # Форматирование значений только если они числовые
+        formatted_profit = f"{profit:.2f}" if isinstance(profit, (int, float)) else profit
+        formatted_cap = f"{cap:.2f}" if isinstance(cap, (int, float)) else cap
+        formatted_turnover = f"{turnover:.2f}" if isinstance(turnover, (int, float)) else turnover
+        formatted_deposit_pct = f"{deposit_pct:.2f}" if isinstance(deposit_pct, (int, float)) else deposit_pct
+        formatted_avg_price = f"{avg_price:.2f}" if isinstance(avg_price, (int, float)) else avg_price
+        formatted_current_price = f"{current_price:.2f}" if isinstance(current_price, (int, float)) else current_price
+
         report_lines.append(
             f"🔹 {name}\n"
-            f"   - Прибыль/Убыток: {'{:.2f}'.format(profit) if isinstance(profit, (int, float)) else profit}\n"
-            f"   - Капитализация: {cap}\n"
-            f"   - Оборот: {turnover}\n"
-            f"   - Депозит %: {deposit_pct}\n"
-            f"   - Средний курс: {avg_price}\n"
-            f"   - Текущий курс: {current_price}\n"
+            f"   - Прибыль/Убыток: {formatted_profit}\n"
+            f"   - Капитализация: {formatted_cap}\n"
+            f"   - Оборот: {formatted_turnover}\n"
+            f"   - Депозит %: {formatted_deposit_pct}\n"
+            f"   - Средний курс: {formatted_avg_price}\n"
+            f"   - Текущий курс: {formatted_current_price}\n"
         )
     return "\n".join(report_lines)
 
@@ -339,7 +352,7 @@ def webhook():
     if request.method == 'POST':
         try:
             data = request.get_json()
-            logger.info(f"Full webhook data: {data}")
+            logger.info(f"Full webhook  {data}")
 
             user_id = None
             message_text = None
