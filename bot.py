@@ -217,12 +217,12 @@ def get_crypto_data_from_notion_http():
 
 def format_quick_report(data):
     """Формирует строку быстрого отчета, исключая записи с нулевой прибылью/убытком."""
-    if not 
+    if not data: # <-- Исправлено: добавлена переменная 'data'
         return "❌ Не удалось получить данные для отчета."
 
     # Фильтрация данных: оставляем только те, у которых current_profit не является 0, 0.0, "0", "0.0", None или NaN.
     filtered_items = []
-    for item in 
+    for item in data: # <-- Исправлено: добавлена переменная 'data'
         raw_profit = item.get('current_profit', 0)
         profit_numeric = None
 
@@ -262,14 +262,14 @@ def format_quick_report(data):
             logger.debug(f"Kept item: {item.get('name', 'N/A')}, original: {item.get('current_profit')}, numeric: {profit_numeric}")
 
 
-    if not filtered_items:
+    if not filtered_items: # <-- Исправлено: добавлена переменная 'filtered_items'
         logger.info("No non-zero profit items found after filtering.")
         return "📉 Нет криптосчетов с ненулевой прибылью/убытком для отчета."
 
     logger.info(f"Found {len(filtered_items)} non-zero profit items.")
     report_lines = ["📈 Быстрый отчет по криптосчетам:\n"]
     total_profit = 0
-    for item in 
+    for item in filtered_items: # <-- Исправлено: добавлена переменная 'filtered_items'
         profit_numeric = item.get('current_profit_numeric', 0)
         # Суммируем числовое значение (даже если оно отрицательное)
         total_profit += profit_numeric
