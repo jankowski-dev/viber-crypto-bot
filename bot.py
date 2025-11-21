@@ -217,39 +217,54 @@ def get_crypto_data_from_notion_http():
 
 def format_quick_report(data):
     """Формирует строку быстрого отчета, исключая записи с нулевой прибылью/убытком."""
-    if not data: # <-- Исправлено: добавлена переменная 'data'
+    if not data:
         return "❌ Не удалось получить данные для отчета."
     
     # Фильтрация данных: оставляем только те, у которых current_profit не является 0, 0.0, "0", "0.0" или None
-    filtered_data = []
-    for item in data: # <-- Исправлено: добавлена переменная 'data'
-        profit = item.get('current_profit', 0)
-        # Проверяем, является ли значение "нулевым" числом (0 или 0.0) или строкой "0"/"0.0"
-        if profit is not None and profit != 0 and profit != 0.0 and profit != "0" and profit != "0.0":
-            filtered_data.append(item)
-        # else:
-        #     logger.debug(f"Filtering out item: {item.get('name', 'N/A')} with profit: {profit}")
+    # Также преобразуем значение к числу, если это возможно, для корректного суммирования.
+    filtered_items = []
+    for item in data:
+        raw_profit = item.get('current_profit', 0)
+        profit_numeric = None
+        
+        # Проверяем, является ли значение числом (int или float)
+        if isinstance(raw_profit, (int, float)):
+            profit_numeric = raw_profit
+        # Проверяем, является ли значение строкой, которую можно преобразовать в число
+        elif isinstance(raw_profit, str):
+            try:
+                profit_numeric = float(raw_profit)
+            except ValueError:
+                # Если строку нельзя преобразовать в число, считаем её нулевой
+                profit_numeric = 0
+        # Для None или других типов считаем прибыль нулевой
+        else:
+            profit_numeric = 0
 
-    if not filtered_data: # <-- Исправлено: добавлена переменная 'filtered_data'
+        # Добавляем в отфильтрованный список, только если значение не ноль
+        if profit_numeric != 0:
+            # Заменяем оригинальное значение на числовое для последующих операций
+            item_for_report = item.copy() # Копируем, чтобы не менять оригинал
+            item_for_report['current_profit_numeric'] = profit_numeric
+            filtered_items.append(item_for_report)
+
+    if not filtered_items:
         return "📉 Нет криптосчетов с ненулевой прибылью/убытком для отчета."
 
     report_lines = ["📈 Быстрый отчет по криптосчетам:\n"]
     total_profit = 0
-    for item in filtered_data: # <-- Исправлено: добавлена переменная 'filtered_data'
-        profit = item.get('current_profit', 0)
-        # Проверяем, является ли значение числом, прежде чем складывать и форматировать
-        if profit is not None and isinstance(profit, (int, float)):
-             total_profit += profit
-             formatted_profit = f"{profit:.2f}"
-        else:
-            # Если не число, используем строковое представление
-            formatted_profit = str(profit) if profit is not None else "N/A"
+    for item in filtered_items:
+        profit_numeric = item.get('current_profit_numeric', 0)
+        # Суммируем числовое значение
+        total_profit += profit_numeric
+        # Форматируем для отображения
+        formatted_profit = f"{profit_numeric:.2f}"
 
         # Выводим название криптосчета
         report_lines.append(f"- {item.get('name', 'N/A')}: {formatted_profit}")
 
-    # Вычисляем форматированную строку для total_profit отдельно
-    formatted_total_profit = f"{total_profit:.2f}" if isinstance(total_profit, (int, float)) else str(total_profit)
+    # Форматируем итоговую сумму
+    formatted_total_profit = f"{total_profit:.2f}"
     report_lines.append(f"\n💰 Сумма текущей прибыли/убытка: {formatted_total_profit}")
     return "\n".join(report_lines)
 
