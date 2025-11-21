@@ -1,957 +1,409 @@
 from flask import Flask, request, jsonify
 import requests
 import os
-import threading
-import time
+import logging
 import json
-import uuid
-from datetime import datetime
-from pathlib import Path
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+# --- Настройки ---
 VIBER_TOKEN = os.environ.get('VIBER_TOKEN')
+NOTION_TOKEN = os.environ.get('NOTION_TOKEN') # Токен интеграции
+NOTION_DATABASE_ID = os.environ.get('NOTION_DATABASE_ID') # ID базы данных
 PORT = os.environ.get('PORT', 5000)
 
-# Папка для временных файлов
-TEMP_FILES_DIR = "temp_files"
-
-# Создаем папку если не существует
-Path(TEMP_FILES_DIR).mkdir(exist_ok=True)
-
-def save_notion_data_to_file(json_data):
-    """Сохраняет данные Notion в файл и возвращает путь к файлу"""
-    try:
-        # Генерируем уникальное имя файла
-        file_id = str(uuid.uuid4())
-        filename = f"notion_export_{file_id}.txt"
-        filepath = os.path.join(TEMP_FILES_DIR, filename)
-        
-        # Форматируем JSON для красивого вывода
-        formatted_json = json.dumps(json_data, indent=2, ensure_ascii=False)
-        
-        # Сохраняем в файл
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write("=== ЭКСПОРТ ДАННЫХ NOTION ===\n")
-            f.write(f"Время экспорта: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"Количество страниц: {len(json_data.get('results', []))}\n")
-            f.write("=" * 50 + "\n\n")
-            f.write(formatted_json)
-        
-        print(f"✅ Файл сохранен: {filepath} ({os.path.getsize(filepath)} байт)")
-        return filepath
-        
-    except Exception as e:
-        print(f"❌ Ошибка сохранения файла: {e}")
-        return None
-
-def cleanup_old_files(max_age_hours=1):
-    """Удаляет старые файлы (старше max_age_hours)"""
-    try:
-        current_time = time.time()
-        deleted_count = 0
-        
-        for filename in os.listdir(TEMP_FILES_DIR):
-            filepath = os.path.join(TEMP_FILES_DIR, filename)
-            if os.path.isfile(filepath):
-                file_age = current_time - os.path.getmtime(filepath)
-                if file_age > max_age_hours * 3600:  # Конвертируем часы в секунды
-                    os.remove(filepath)
-                    deleted_count += 1
-                    print(f"🗑️ Удален старый файл: {filename}")
-        
-        if deleted_count > 0:
-            print(f"✅ Удалено {deleted_count} старых файлов")
-            
-    except Exception as e:
-        print(f"❌ Ошибка очистки файлов: {e}")
-
-def get_file_size_mb(filepath):
-    """Возвращает размер файла в МБ"""
-    try:
-        size_bytes = os.path.getsize(filepath)
-        return round(size_bytes / (1024 * 1024), 2)
-    except:
-        return 0
-
-def handle_notion_export(user_id):
-    """Обрабатывает запрос на экспорт данных Notion в файл"""
-    try:
-        # Отправляем сообщение о начале процесса
-        send_message(user_id, "🔄 Начинаем экспорт данных из Notion в файл...\n⏳ Это может занять несколько секунд")
-        
-        # Выполняем экспорт
-        filepath = export_notion_to_file()
-        
-        if filepath:
-            file_size = get_file_size_mb(filepath)
-            filename = f"notion_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-            
-            # Отправляем файл
-            if send_file_message(user_id, filepath, filename):
-                send_message(user_id, f"✅ Экспорт завершен!\n📂 Файл отправлен: {filename}\n📊 Размер: {file_size}MB\n\n📝 Файл содержит все данные из вашей базы Notion в формате JSON")
-                result_text = "✅ Экспорт завершен успешно!"
-            else:
-                send_message(user_id, "❌ Не удалось отправить файл. Возможно, файл слишком большой или произошла ошибка отправки.")
-                result_text = "❌ Ошибка отправки файла"
-            
-            # Очищаем старые файлы после успешной отправки
-            cleanup_old_files()
-            return result_text
-        else:
-            send_message(user_id, "❌ Не удалось создать файл с данными Notion. Проверьте настройки подключения к Notion.")
-            return "❌ Ошибка создания файла"
-            
-    except Exception as e:
-        print(f"❌ Error in handle_notion_export: {e}")
-        send_message(user_id, "❌ Произошла ошибка при экспорте данных. Попробуйте позже.")
-        return "❌ Ошибка процесса экспорта"
-
-def export_notion_to_file():
-    """Экспортирует данные Notion в файл и возвращает путь к файлу"""
-    print("🔄 Начинаем экспорт данных Notion в файл...")
-    
-    # Получаем данные из Notion
-    json_data = get_notion_json_data()
-    
-    if json_data is None:
-        print("❌ Не удалось получить данные из Notion")
-        return None
-
-    # Сохраняем в файл
-    filepath = save_notion_data_to_file(json_data)
-    
-    if filepath:
-        file_size = get_file_size_mb(filepath)
-        print(f"✅ Экспорт завершен: {filepath} ({file_size}MB)")
-        return filepath
-    else:
-        print("❌ Ошибка сохранения файла")
-        return None
-    """Экспортирует данные Notion в файл и возвращает путь к файлу"""
-    print("🔄 Начинаем экспорт данных Notion в файл...")
-
-    # Получаем данные из Notion
-    json_data = get_notion_json_data()
-    
-    if json_data is None:
-        print("❌ Не удалось получить данные из Notion")
-        return None
-
-    # Сохраняем в файл
-    filepath = save_notion_data_to_file(json_data)
-    
-    if filepath:
-        file_size = get_file_size_mb(filepath)
-        print(f"✅ Экспорт завершен: {filepath} ({file_size}MB)")
-        return filepath
-    else:
-        print("❌ Ошибка сохранения файла")
-        return None
-
-def handle_notion_export(user_id):
-    """Обрабатывает запрос на экспорт данных Notion в файл"""
-    try:
-        # Отправляем сообщение о начале процесса
-        send_message(user_id, "🔄 Начинаем экспорт данных из Notion в файл...\n⏳ Это может занять несколько секунд")
-        
-        # Выполняем экспорт
-        filepath = export_notion_to_file()
-        
-        if filepath:
-            file_size = get_file_size_mb(filepath)
-            filename = f"notion_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
-            
-            # Отправляем файл
-            if send_file_message(user_id, filepath, filename):
-                send_message(user_id, f"✅ Экспорт завершен!\n📁 Файл отправлен: {filename}\n📊 Размер: {file_size}MB\n\n💡 Файл содержит все данные из вашей базы Notion в формате JSON")
-            else:
-                send_message(user_id, "❌ Не удалось отправить файл. Возможно, файл слишком большой или произошла ошибка отправки.")
-            
-            # Очищаем старые файлы после успешной отправки
-            cleanup_old_files()
-        else:
-            send_message(user_id, "❌ Не удалось создать файл с данными Notion. Проверьте настройки подключения к Notion.")
-            
-    except Exception as e:
-        print(f"❌ Error in handle_notion_export: {e}")
-        send_message(user_id, "❌ Произошла ошибка при экспорте данных. Попробуйте позже.")
-
-# ⚠️ ЗАМЕНИТЕ НА ВАШ РЕАЛЬНЫЙ USER_ID
+# Ваши авторизованные ID пользователей
 AUTHORIZED_USER_IDS = [
-    'zV/BRbzyPWJHKFpMTLWkqw=='  # ← ЗАМЕНИТЕ ЭТО на ваш реальный ID
+    'zV/BRbzyPWJHKFpMTLWkqw=='  # ЗАМЕНИТЕ на ваш реальный ID
 ]
 
-# Глобальная переменная для хранения последнего курса
-current_btc_price = None
-
-print("🤖 Private Viber Bot starting...")
+print("🤖 Private Viber Bot with Notion Integration (HTTP API) starting...")
 print(f"🔐 Authorized users: {len(AUTHORIZED_USER_IDS)}")
-
-# Notion конфигурация (переменные окружения GitHub)
-NOTION_TOKEN = os.environ.get('NOTION_TOKEN')
-NOTION_DATABASE_ID = os.environ.get('NOTION_DATABASE_ID')
-
-def get_all_notion_data():
-    """Получает ВСЕ данные из Notion БД для диагностики"""
-    # Проверяем наличие токена и ID базы
-    if not NOTION_TOKEN or not NOTION_DATABASE_ID:
-        print("❌ Notion credentials не настроены")
-        return None
-
-    try:
-        url = f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query"
-        headers = {
-            "Authorization": f"Bearer {NOTION_TOKEN}",
-            "Notion-Version": "2022-06-28",
-            "Content-Type": "application/json"
-        }
-        
-        response = requests.post(url, headers=headers, json={})
-        
-        if response.status_code == 200:
-            data = response.json()
-            all_data = []
-            
-            print(f"📊 Total pages in DB: {len(data.get('results', []))}")
-            
-            for i, page in enumerate(data.get("results", []), 1):
-                page_info = {
-                    'page_id': page.get('id', 'N/A'),
-                    'page_title': 'N/A',
-                    'properties': {}
-                }
-                
-                # Получаем название страницы
-                properties = page.get("properties", {})
-                for prop_name, prop_data in properties.items():
-                    page_info['properties'][prop_name] = {
-                        'type': prop_data.get('type', 'unknown'),
-                        'value': prop_data
-                    }
-                
-                    # Пытаемся найти название страницы (обычно в первой текстовой колонке)
-                    if prop_data.get('type') == 'title' and not page_info['page_title']:
-                        title_items = prop_data.get('title', [])
-                        if title_items:
-                            page_info['page_title'] = title_items[0].get('plain_text', 'N/A')
-                
-                all_data.append(page_info)
-                print(f"📄 Page {i}: {page_info['page_title']}")
-                print(f"   Properties: {list(page_info['properties'].keys())}")
-            
-            return all_data
-        else:
-            print(f"❌ Notion API error: {response.status_code}")
-            print(f"Response: {response.text}")
-            return None
-            
-    except Exception as e:
-        print(f"❌ Error getting Notion data: {e}")
-        return None
-
-def format_all_notion_data():
-    """Форматирует все данные из Notion для отображения в боте"""
-    data = get_all_notion_data()
-    
-    if data is None:
-        return """🧪 Диагностика Notion
-
-❌ Не удалось получить данные из Notion
-
-Возможные причины:
-• Неверный токен API
-• Неверный ID базы данных
-• Нет доступа к базе данных
-• Проблемы с подключением
-
-Проверьте настройки подключения к Notion."""
-    
-    if not data:
-        return """🧪 Диагностика Notion
-
-⚠️ Подключение к Notion успешно, но база данных пуста
-
-Возможные причины:
-• В базе данных нет записей
-• База данных не содержит страниц
-
-Проверьте содержимое базы данных."""
-    
-    # Форматируем данные для отображения
-    message = "🧪 Диагностика Notion\n\n📊 Все данные из базы:\n\n"
-    
-    for i, page in enumerate(data, 1):
-        message += f"📄 Запись {i}: {page['page_title']}\n"
-        message += f"   ID: {page['page_id'][:8]}...\n"
-        message += f"   Колонки: {', '.join(page['properties'].keys())}\n\n"
-    
-    message += f"✅ Всего записей: {len(data)}"
-    
-    return message
-
-def get_notion_profits():
-    """Получает данные из колонки 'Текущая прибыль' из Notion БД"""
-    # Проверяем наличие токена и ID базы
-    if not NOTION_TOKEN or not NOTION_DATABASE_ID:
-        print("❌ Notion credentials не настроены")
-        return None
-
-    try:
-        url = f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query"
-        headers = {
-            "Authorization": f"Bearer {NOTION_TOKEN}",
-            "Notion-Version": "2022-06-28",
-            "Content-Type": "application/json"
-        }
-        
-        response = requests.post(url, headers=headers, json={})
-        
-        if response.status_code == 200:
-            data = response.json()
-            profits = []
-            
-            for page in data.get("results", []):
-                # Получаем свойства страницы
-                properties = page.get("properties", {})
-                
-                # Ищем колонку "Текущая прибыль"
-                if "Текущая прибыль" in properties:
-                    profit_property = properties["Текущая прибыль"]
-                    
-                    # Извлекаем значение в зависимости от типа
-                    if profit_property.get("type") == "number":
-                        profit_value = profit_property.get("number")
-                        if profit_value is not None:
-                            profits.append(f"${profit_value:,.2f}")
-                    elif profit_property.get("type") == "formula":
-                        formula_result = profit_property.get("formula", {}).get("number")
-                        if formula_result is not None:
-                            profits.append(f"${formula_result:,.2f}")
-            
-            return profits
-        else:
-            print(f"❌ Notion API error: {response.status_code}")
-            print(f"Response: {response.text}")
-            return None
-            
-    except Exception as e:
-        print(f"❌ Error getting Notion data: {e}")
-        return None
-
-def get_notion_test_message():
-    """Получает и форматирует данные из Notion для отображения"""
-    profits = get_notion_profits()
-    
-    if profits is None:
-        return """🧪 Тест Notion
-
-❌ Не удалось получить данные из Notion
-
-Возможные причины:
-• Неверный токен API
-• Неверный ID базы данных
-• Нет доступа к базе данных
-• Колонка "Текущая прибыль" не найдена
-
-Проверьте настройки подключения к Notion."""
-    
-    if not profits:
-        return """🧪 Тест Notion
-
-⚠️ Подключение к Notion успешно, но данные не найдены
-
-Возможные причины:
-• База данных пуста
-• Колонка "Текущая прибыль" пуста
-• Неверное название колонки
-
-Проверьте структуру базы данных."""
-    
-    # Форматируем данные для отображения
-    message = "🧪 Тест Notion\n\n📊 Данные из колонки 'Текущая прибыль':\n\n"
-    
-    for i, profit in enumerate(profits, 1):
-        message += f"• Запись {i}: {profit}\n"
-    
-    message += f"\n✅ Найдено записей: {len(profits)}"
-    
-    return message
-
-def get_notion_json_data():
-    """Получает все данные из Notion в формате JSON"""
-    # Проверяем наличие токена и ID базы
-    if not NOTION_TOKEN or not NOTION_DATABASE_ID:
-        print("❌ Notion credentials не настроены")
-        return None
-
-    try:
-        url = f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query"
-        headers = {
-            "Authorization": f"Bearer {NOTION_TOKEN}",
-            "Notion-Version": "2022-06-28",
-            "Content-Type": "application/json"
-        }
-        
-        response = requests.post(url, headers=headers, json={})
-        
-        if response.status_code == 200:
-            return response.json()
-        else:
-            print(f"❌ Notion API error: {response.status_code}")
-            print(f"Response: {response.text}")
-            return None
-            
-    except Exception as e:
-        print(f"❌ Error getting Notion JSON data: {e}")
-        return None
-
-def format_notion_json_for_display(json_data):
-    """Форматирует JSON данные для отображения в боте"""
-    if json_data is None:
-        return "❌ Не удалось получить данные из Notion"
-    
-    try:
-        import json as json_module
-        
-        # Создаем упрощенную версию для отображения
-        simplified_data = {
-            "total_pages": len(json_data.get("results", [])),
-            "pages": []
-        }
-        
-        for i, page in enumerate(json_data.get("results", []), 1):
-            page_info = {
-                "page_id": page.get("id", "N/A"),
-                "page_title": "N/A",
-                "properties_count": len(page.get("properties", {})),
-                "property_names": list(page.get("properties", {}).keys())
-            }
-            
-            # Получаем название страницы
-            properties = page.get("properties", {})
-            for prop_name, prop_data in properties.items():
-                if prop_data.get("type") == "title":
-                    title_items = prop_data.get("title", [])
-                    if title_items:
-                        page_info["page_title"] = title_items[0].get("plain_text", "N/A")
-                    break
-            
-            simplified_data["pages"].append(page_info)
-        
-        # Форматируем JSON для отображения
-        json_str = json_module.dumps(simplified_data, indent=2, ensure_ascii=False)
-        
-        # Разбиваем на части, если слишком длинный
-        if len(json_str) > 3000:
-            # Показываем только первую часть с информацией о структуре
-            message = "🧪 JSON данные из Notion\n\n📊 Структура данных:\n```json\n"
-            message += json_module.dumps({
-                "total_pages": simplified_data["total_pages"],
-                "sample_page": simplified_data["pages"][0] if simplified_data["pages"] else {}
-            }, indent=2, ensure_ascii=False)
-            message += "\n```\n⚠️ Данные слишком большие для отображения. Полный JSON сохранен в логах."
-        else:
-            message = "🧪 JSON данные из Notion\n\n📊 Все данные в формате JSON:\n```json\n"
-            message += json_str
-            message += "\n```"
-        
-        return message
-        
-    except Exception as e:
-        print(f"❌ Error formatting JSON: {e}")
-        return "❌ Ошибка форматирования JSON данных"
-
-def get_btc_price():
-    """Получает текущий курс биткоина с CoinGecko"""
-    try:
-        response = requests.get(
-            'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true',
-            timeout=10
-        )
-        if response.status_code == 200:
-            data = response.json()
-            btc_price = data['bitcoin']['usd']
-            change_24h = data['bitcoin']['usd_24h_change']
-            return {
-                'price': float(btc_price),
-                'change_24h': float(change_24h)
-            }
-        else:
-            print(f"❌ CoinGecko API error: {response.status_code}")
-            return None
-    except Exception as e:
-        print(f"❌ Error getting BTC price from CoinGecko: {e}")
-        return None
-
-def send_btc_updates():
-    """Отправляет обновления курса BTC всем авторизованным пользователям"""
-    global current_btc_price
-    
-    print(f"🔄 Sending BTC update at {datetime.now().strftime('%H:%M:%S')}")
-    
-    btc_data = get_btc_price()
-    if btc_data is not None:
-        price = btc_data['price']
-        change_24h = btc_data['change_24h']
-        current_btc_price = price
-        
-        timestamp = datetime.now().strftime('%H:%M:%S')
-        
-        # Форматируем изменение за 24 часа
-        if change_24h > 0:
-            change_emoji = "📈"
-            change_text = f"+{change_24h:.2f}%"
-        else:
-            change_emoji = "📉"
-            change_text = f"{change_24h:.2f}%"
-        
-        message = f"""📊 Bitcoin (BTC)
-
-💰 ${price:,.2f}
-{change_emoji} 24ч: {change_text}
-
-🕒 {timestamp}
-⏰ Обновляется каждые 30 секунд"""
-        
-        success_count = 0
-        # Отправляем всем авторизованным пользователям
-        for user_id in AUTHORIZED_USER_IDS:
-            if send_message(user_id, message, create_main_menu()):
-                success_count += 1
-                print(f"📤 Sent BTC price to {user_id[:8]}...")
-            else:
-                print(f"❌ Failed to send to {user_id[:8]}...")
-        
-        print(f"✅ BTC update completed: {success_count}/{len(AUTHORIZED_USER_IDS)} users")
-        print(f"💰 Current price: ${price:,.2f} | Change: {change_24h:.2f}%")
-    else:
-        print("❌ Failed to get BTC price from CoinGecko")
-
-def btc_scheduler():
-    """Фоновая задача для отправки курса BTC каждые 30 секунд"""
-    while True:
-        try:
-            send_btc_updates()
-            time.sleep(300)  # Каждые 300 секунд
-        except Exception as e:
-            print(f"❌ Error in BTC scheduler: {e}")
-            time.sleep(300)  # При ошибке тоже ждем 300 секунд
-
-def create_main_menu():
-    """Создает главное меню с категориями"""
-    return {
-        "Type": "keyboard",
-        "DefaultHeight": False,
-        "Buttons": [
-            {
-                "ActionType": "reply",
-                "ActionBody": "menu_crypto",
-                "Text": "₿ Крипто",
-                "TextSize": "large",
-                "Columns": 3,
-                "Rows": 1
-            },
-            {
-                "ActionType": "reply", 
-                "ActionBody": "menu_info",
-                "Text": "ℹ️ Инфо",
-                "TextSize": "large", 
-                "Columns": 3,
-                "Rows": 1
-            },
-            {
-                "ActionType": "reply",
-                "ActionBody": "test_notion",
-                "Text": "🧪 Тест Notion",
-                "TextSize": "large",
-                "Columns": 3,
-                "Rows": 1
-            },
-            {
-                "ActionType": "reply",
-                "ActionBody": "notion_json",
-                "Text": "📊 JSON Notion",
-                "TextSize": "large",
-                "Columns": 3,
-                "Rows": 1
-            },
-            {
-                "ActionType": "reply",
-                "ActionBody": "export_notion",
-                "Text": "📂 Экспорт в файл",
-                "TextSize": "large",
-                "Columns": 3,
-                "Rows": 1
-            }
-        ],
-        "ButtonSize": "large"
-    }
-
-def create_crypto_menu():
-    """Создает меню криптовалют"""
-    return {
-        "Type": "keyboard",
-        "DefaultHeight": False,
-        "Buttons": [
-            {
-                "ActionType": "reply",
-                "ActionBody": "crypto_view",
-                "Text": "👁️ Просмотр",
-                "TextSize": "regular",
-                "Columns": 2,
-                "Rows": 1
-            },
-            {
-                "ActionType": "reply",
-                "ActionBody": "crypto_months",
-                "Text": "📆 По месяцам",
-                "TextSize": "regular",
-                "Columns": 2,
-                "Rows": 1
-            },
-            {
-                "ActionType": "reply",
-                "ActionBody": "back_to_main",
-                "Text": "⬅️ Назад",
-                "TextSize": "regular",
-                "Columns": 2,
-                "Rows": 1
-            }
-        ],
-        "ButtonSize": "regular"
-    }
-
-def create_info_menu():
-    """Создает меню информации"""
-    return {
-        "Type": "keyboard",
-        "DefaultHeight": False,
-        "Buttons": [
-            {
-                "ActionType": "reply",
-                "ActionBody": "info_schedule",
-                "Text": "⏰ Расписание",
-                "TextSize": "regular",
-                "Columns": 2,
-                "Rows": 1
-            },
-            {
-                "ActionType": "reply",
-                "ActionBody": "info_weather",
-                "Text": "🌤️ Погода",
-                "TextSize": "regular",
-                "Columns": 2,
-                "Rows": 1
-            },
-            {
-                "ActionType": "reply",
-                "ActionBody": "info_news",
-                "Text": "📰 Новости",
-                "TextSize": "regular",
-                "Columns": 2,
-                "Rows": 1
-            },
-            {
-                "ActionType": "reply",
-                "ActionBody": "back_to_main",
-                "Text": "⬅️ Назад",
-                "TextSize": "regular",
-                "Columns": 2,
-                "Rows": 1
-            }
-        ],
-        "ButtonSize": "regular"
-    }
+print(f"📊 Notion DB ID: {NOTION_DATABASE_ID[-8:] if NOTION_DATABASE_ID else 'Not set'}...")
 
 def is_authorized_user(user_id):
     """Проверяет, авторизован ли пользователь"""
     return user_id in AUTHORIZED_USER_IDS
 
-@app.route('/webhook', methods=['GET', 'POST', 'HEAD'])
-def webhook():
-    if request.method == 'GET':
-        return jsonify({"status": "ok"})
-    
-    if request.method == 'POST':
-        try:
-            data = request.get_json()
-            
-            # Получаем ID пользователя
-            user_id = None
-            if data.get('event') == 'message':
-                user_id = data['sender']['id']
-            elif data.get('event') == 'conversation_started':
-                user_id = data['user']['id']
-            
-            # Проверяем авторизацию
-            if user_id and not is_authorized_user(user_id):
-                print(f"⛔ Unauthorized access attempt from: {user_id}")
-                send_message(user_id, "❌ Доступ запрещен. Этот бот приватный.")
-                return jsonify({"status": 0})
-            
-            # Обрабатываем сообщения только авторизованных пользователей
-            if data.get('event') == 'message' and data['message']['type'] == 'text':
-                message_text = data['message']['text'].lower()
-                
-                # Обработка навигации по меню
-                menu_responses = {
-                    # Главное меню
-                    'меню': {
-                        'text': '🏠 Главное меню\n\nВыберите нужную категорию:',
-                        'keyboard': create_main_menu()
-                    },
-                    
-                    # Крипто меню
-                    'menu_crypto': {
-                        'text': '₿ Криптовалюты\n\nВыберите действие:',
-                        'keyboard': create_crypto_menu()
-                    },
-                    
-                    # Инфо меню  
-                    'menu_info': {
-                        'text': 'ℹ️ Информация\n\nВыберите раздел:',
-                        'keyboard': create_info_menu()
-                    },
-                    
-                    # Тест Notion
-                    'test_notion': {
-                        'text': format_all_notion_data(),
-                        'keyboard': create_main_menu()
-                    },
-                    
-                    # JSON данные из Notion
-                    'notion_json': {
-                        'text': format_notion_json_for_display(get_notion_json_data()),
-                        'keyboard': create_main_menu()
-                    },
-                    
-                    # Экспорт в файл
-                    'export_notion': {
-                        'text': handle_notion_export(user_id),
-                        'keyboard': create_main_menu()
-                    },
-                    
-                    # Назад в главное меню
-                    'back_to_main': {
-                        'text': '🏠 Возвращаемся в главное меню',
-                        'keyboard': create_main_menu()
-                    },
-                    
-                    # Крипто функции
-                    'crypto_view': {
-                        'text': f'👁️ Просмотр курсов\n\n💰 Bitcoin: ${current_btc_price:,.2f}\n\n🔄 Обновляется каждые 30 секунд',
-                        'keyboard': create_crypto_menu()
-                    },
-                    'crypto_months': {
-                        'text': '📆 Статистика по месяцам\n\n💰 Bitcoin: данные по месяцам будут добавлены позже',
-                        'keyboard': create_crypto_menu()
-                    },
-                    
-                    # Инфо функции
-                    'info_schedule': {
-                        'text': '⏰ Расписание уведомлений\n\n🕒 Курс Bitcoin - каждые 30 секунд\n\n⏰ Дополнительные уведомления будут добавлены позже',
-                        'keyboard': create_info_menu()
-                    },
-                    'info_weather': {
-                        'text': '🌤️ Погода\n\nФункция погоды будет добавлена позже',
-                        'keyboard': create_info_menu()
-                    },
-                    'info_news': {
-                        'text': '📰 Новости\n\nФункция новостей будет добавлена позже',
-                        'keyboard': create_info_menu()
-                    },
-                }
-                
-                # Проверяем команды меню
-                if message_text in menu_responses:
-                    menu_data = menu_responses[message_text]
-                    send_message(user_id, menu_data['text'], menu_data['keyboard'])
-                else:
-                    # Обычные команды
-                    responses = {
-                        'привет': '👋 Привет! Это приватный крипто-бот!',
-                        'портфель': '💰 Портфель: 1.2 BTC, 5.3 ETH',
-                        'цена btc': f'📈 BTC: ${current_btc_price:,.2f}' if current_btc_price else '📈 Курс BTC временно недоступен',
-                        'курс': f'💰 Текущий курс BTC: ${current_btc_price:,.2f}' if current_btc_price else '💰 Курс временно недоступен',
-                        'команды': '🛠 Используйте кнопки меню или команды: привет, портфель, цена btc, курс, статус, btc, меню',
-                        'мой id': f'🆔 Ваш ID: {user_id}',
-                        'статус': '✅ Бот работает в штатном режиме с авто-обновлением курса BTC каждые 30 секунд',
-                        'btc': f'₿ Bitcoin:\n💰 ${current_btc_price:,.2f}\n⏰ Обновляется каждые 30 секунд' if current_btc_price else '₿ Bitcoin: курс временно недоступен',
-                        'меню': '🏠 Главное меню\n\nИспользуйте кнопки для навигации'
-                    }
-                    
-                    response_text = responses.get(message_text, f'🤔 Не понял: {message_text}\n\n💡 Введите "меню" для открытия главного меню')
-                    send_message(user_id, response_text, create_main_menu())
-            
-            elif data.get('event') == 'conversation_started':
-                welcome_msg = """🔐 Добро пожаловать в приватный крипто-бот!
+def get_crypto_data_from_notion_http():
+    """Извлекает данные из Notion DB с помощью HTTP API. Возвращает список словарей."""
+    if not NOTION_TOKEN or not NOTION_DATABASE_ID:
+        logger.error("Notion credentials (NOTION_TOKEN or NOTION_DATABASE_ID) not set.")
+        return None, "Ошибка: Не заданы учетные данные для Notion."
 
-Я буду присылать вам курс Bitcoin каждые 30 секунд!
+    headers = {
+        "Authorization": f"Bearer {NOTION_TOKEN}",
+        "Content-Type": "application/json",
+        "Notion-Version": "2022-06-28" # Указываем версию API
+    }
 
-🏠 Используйте главное меню для навигации:
-• ₿ Крипто - курсы и статистика
-• ℹ️ Инфо - расписание, погода, новости
-• 🧪 Тест Notion - проверка подключения к базе торговых данных
+    url = f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query"
+    payload = {} # Можно добавить фильтры или сортировку сюда
 
-💰 Также доступны команды:
-• цена btc - текущий курс
-• курс - курс Bitcoin
-• btc - информация о Bitcoin
-• меню - открыть главное меню"""
-                send_message(user_id, welcome_msg, create_main_menu())
-            
-            return jsonify({"status": 0})
-            
-        except Exception as e:
-            print(f"❌ Error: {e}")
-            return jsonify({"status": 1})
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=15) # POST запрос для query
+        response.raise_for_status() # Возбуждает исключение для 4xx/5xx статусов
 
-def send_message(user_id, text, keyboard=None):
-    """Отправляет сообщение пользователю через Viber API"""
+        data = response.json()
+        pages = data.get("results", [])
+        parsed_data = []
+
+        for page in pages:
+            page_id = page["id"] # ID страницы (строки), может понадобиться позже
+            props = page.get("properties", {})
+
+            # --- Извлечение свойств с использованием точных имен из notion_properties_mapping.txt ---
+            # Свойство: 'Прибыльные сделки Rollup' (Тип: rollup, ID: %3A%3A%5BW)
+            прибыльные_сделки_rollup_prop = props.get("Прибыльные сделки Rollup", {})
+            # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
+            прибыльные_сделки_rollup_value = 'Тип неизвестен'
+
+            # Свойство: 'Ср. доходность, %' (Тип: rollup, ID: %3A%3DWF)
+            ср._доходность,_%_prop = props.get("Ср. доходность, %", {})
+            # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
+            ср._доходность,_%_value = 'Тип неизвестен'
+
+            # Свойство: 'Депозит, %' (Тип: formula, ID: %3FpZT)
+            депозит,_%_prop = props.get("Депозит, %", {})
+            депозит,_%_formula_obj = депозит,_%_prop.get("formula", {})
+            депозит,_%_value = депозит,_%_formula_obj.get("number", депозит,_%_formula_obj.get("string", депозит,_%_formula_obj.get("date", "N/A")))
+
+            # Свойство: 'Комиссии' (Тип: rollup, ID: CkpA)
+            комиссии_prop = props.get("Комиссии", {})
+            # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
+            комиссии_value = 'Тип неизвестен'
+
+            # Свойство: 'Прибыль / Убыток' (Тип: rollup, ID: DM%3Ac)
+            прибыль_/_убыток_prop = props.get("Прибыль / Убыток", {})
+            # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
+            прибыль_/_убыток_value = 'Тип неизвестен'
+
+            # Свойство: 'Оборот открытых Rollup' (Тип: rollup, ID: DomP)
+            оборот_открытых_rollup_prop = props.get("Оборот открытых Rollup", {})
+            # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
+            оборот_открытых_rollup_value = 'Тип неизвестен'
+
+            # Свойство: 'Текущая' (Тип: rollup, ID: Jl%7D%5D)
+            текущая_prop = props.get("Текущая", {})
+            # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
+            текущая_value = 'Тип неизвестен'
+
+            # Свойство: 'Капитализация, $' (Тип: rollup, ID: Js%7CC)
+            капитализация,_$_prop = props.get("Капитализация, $", {})
+            # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
+            капитализация,_$_value = 'Тип неизвестен'
+
+            # Свойство: 'Текущая прибыль' (Тип: formula, ID: Zp%5Bd)
+            текущая_прибыль_prop = props.get("Текущая прибыль", {})
+            текущая_прибыль_formula_obj = текущая_прибыль_prop.get("formula", {})
+            текущая_прибыль_value = текущая_прибыль_formula_obj.get("number", текущая_прибыль_formula_obj.get("string", текущая_прибыль_formula_obj.get("date", "N/A")))
+
+            # Свойство: 'Cделки +' (Тип: formula, ID: %5Be%3E%3C)
+            cделки_+_prop = props.get("Cделки +", {})
+            cделки_+_formula_obj = cделки_+_prop.get("formula", {})
+            cделки_+_value = cделки_+_formula_obj.get("number", cделки_+_formula_obj.get("string", cделки_+_formula_obj.get("date", "N/A")))
+
+            # Свойство: 'Текущий курс' (Тип: rollup, ID: %5BlCP)
+            текущий_курс_prop = props.get("Текущий курс", {})
+            # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
+            текущий_курс_value = 'Тип неизвестен'
+
+            # Свойство: 'Формула прибыли' (Тип: formula, ID: cs%60X)
+            формула_прибыли_prop = props.get("Формула прибыли", {})
+            формула_прибыли_formula_obj = формула_прибыли_prop.get("formula", {})
+            формула_прибыли_value = формула_прибыли_formula_obj.get("number", формула_прибыли_formula_obj.get("string", формула_прибыли_formula_obj.get("date", "N/A")))
+
+            # Свойство: 'Чистая прибыль Rollup' (Тип: rollup, ID: e%3B%3Fy)
+            чистая_прибыль_rollup_prop = props.get("Чистая прибыль Rollup", {})
+            # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
+            чистая_прибыль_rollup_value = 'Тип неизвестен'
+
+            # Свойство: 'Доходность, %' (Тип: formula, ID: fy%3F%5E)
+            доходность,_%_prop = props.get("Доходность, %", {})
+            доходность,_%_formula_obj = доходность,_%_prop.get("formula", {})
+            доходность,_%_value = доходность,_%_formula_obj.get("number", доходность,_%_formula_obj.get("string", доходность,_%_formula_obj.get("date", "N/A")))
+
+            # Свойство: 'Оборот закрытых Rollup' (Тип: rollup, ID: kBOl)
+            оборот_закрытых_rollup_prop = props.get("Оборот закрытых Rollup", {})
+            # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
+            оборот_закрытых_rollup_value = 'Тип неизвестен'
+
+            # Свойство: 'Чистая прибыль' (Тип: formula, ID: kBU%60)
+            чистая_прибыль_prop = props.get("Чистая прибыль", {})
+            чистая_прибыль_formula_obj = чистая_прибыль_prop.get("formula", {})
+            чистая_прибыль_value = чистая_прибыль_formula_obj.get("number", чистая_прибыль_formula_obj.get("string", чистая_прибыль_formula_obj.get("date", "N/A")))
+
+            # Свойство: 'Date' (Тип: date, ID: laaW)
+            date_prop = props.get("Date", {})
+            date_date_obj = date_prop.get("date", {})
+            date_value = date_date_obj.get("start", "N/A") if date_date_obj else "N/A"
+
+            # Свойство: 'Ср. срок Rollup' (Тип: rollup, ID: luu%7B)
+            ср._срок_rollup_prop = props.get("Ср. срок Rollup", {})
+            # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
+            ср._срок_rollup_value = 'Тип неизвестен'
+
+            # Свойство: 'Криптосчет' (Тип: relation, ID: o%3CpV)
+            криптосчет_prop = props.get("Криптосчет", {})
+            # Тип 'relation' неизвестен. Проверьте документацию Notion API.
+            криптосчет_value = 'Тип неизвестен'
+
+            # Свойство: 'Активных' (Тип: rollup, ID: qOe%40)
+            активных_prop = props.get("Активных", {})
+            # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
+            активных_value = 'Тип неизвестен'
+
+            # Свойство: 'Оборот' (Тип: formula, ID: u%40A%3E)
+            оборот_prop = props.get("Оборот", {})
+            оборот_formula_obj = оборот_prop.get("formula", {})
+            оборот_value = оборот_formula_obj.get("number", оборот_formula_obj.get("string", оборот_formula_obj.get("date", "N/A")))
+
+            # Свойство: 'Оборотные, $' (Тип: formula, ID: yIzH)
+            оборотные,_$_prop = props.get("Оборотные, $", {})
+            оборотные,_$_formula_obj = оборотные,_$_prop.get("formula", {})
+            оборотные,_$_value = оборотные,_$_formula_obj.get("number", оборотные,_$_formula_obj.get("string", оборотные,_$_formula_obj.get("date", "N/A")))
+
+            # Свойство: 'Ср. срок' (Тип: formula, ID: zAfo)
+            ср._срок_prop = props.get("Ср. срок", {})
+            ср._срок_formula_obj = ср._срок_prop.get("formula", {})
+            ср._срок_value = ср._срок_formula_obj.get("number", ср._срок_formula_obj.get("string", ср._срок_formula_obj.get("date", "N/A")))
+
+            # Свойство: 'Средний курс' (Тип: formula, ID: %7DwU%5E)
+            средний_курс_prop = props.get("Средний курс", {})
+            средний_курс_formula_obj = средний_курс_prop.get("formula", {})
+            средний_курс_value = средний_курс_formula_obj.get("number", средний_курс_formula_obj.get("string", средний_курс_formula_obj.get("date", "N/A")))
+
+            # Свойство: 'Оборот, мон.' (Тип: rollup, ID: ~%3Dk%5B)
+            оборот,_мон._prop = props.get("Оборот, мон.", {})
+            # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
+            оборот,_мон._value = 'Тип неизвестен'
+
+            # Свойство: '' (Тип: title, ID: title) - Пустое имя, предположим это заголовок
+            # ВНИМАНИЕ: Пустое имя свойства может вызвать проблемы. Лучше дать ему имя в Notion.
+            # Для примера, если это заголовок, и вы его назовете "Name", используйте:
+            # name_prop = props.get("Name", {})
+            # name_title_array = name_prop.get("title", [])
+            # name_value = name_title_array[0].get("text", {}).get("content", "N/A") if name_title_array else "N/A"
+            # Пока оставим как есть, но рекомендуется исправить в Notion.
+            _prop = props.get("", {})
+            _title_array = _prop.get("title", [])
+            name_value = _title_array[0].get("text", {}).get("content", "N/A (Без имени)") if _title_array else "N/A (Без имени)"
+
+
+            # --- Сбор данных в словарь ---
+            # Здесь вы можете выбрать, какие именно свойства использовать в отчетах.
+            # Я выбрал несколько, соответствующие вашим требованиям.
+            parsed_data.append({
+                "page_id": page_id,
+                "name": name_value, # Используем значение заголовка (или "N/A (Без имени)")
+                "current_profit": текущая_прибыль_value,
+                "capitalization": капитализация,_$_value, # Rollup
+                "turnover": оборот_value, # Formula
+                "deposit_pct": депозит,_%_value, # Formula
+                "avg_price": средний_курс_value, # Formula
+                "current_price": текущий_курс_value, # Rollup
+                # Можно добавить и другие, если понадобятся
+                # "other_prop": other_value,
+            })
+
+        return parsed_data, None
+
+    except requests.exceptions.HTTPError as http_err:
+        logger.error(f"HTTP error occurred: {http_err}")
+        logger.error(f"Response content: {response.text}")
+        return None, f"Ошибка HTTP при запросе к Notion: {http_err}"
+    except requests.exceptions.RequestException as req_err:
+        logger.error(f"Request error occurred: {req_err}")
+        return None, f"Ошибка запроса к Notion: {req_err}"
+    except Exception as e:
+        logger.error(f"Unexpected error parsing Notion  {e}")
+        return None, f"Неизвестная ошибка при обработке данных Notion: {e}"
+
+
+def format_quick_report(data):
+    """Формирует строку быстрого отчета."""
+    if not 
+        return "❌ Не удалось получить данные для отчета."
+    report_lines = ["📈 Быстрый отчет по криптосчетам:\n"]
+    total_profit = 0
+    for item in 
+        profit = item.get('current_profit', 0)
+        # Проверяем, является ли значение числом, прежде чем складывать
+        if profit is not None and isinstance(profit, (int, float)):
+             total_profit += profit
+        report_lines.append(f"- {item.get('name', 'N/A')}: {'{:.2f}'.format(profit) if profit is not None else 'N/A'}")
+    report_lines.append(f"\n💰 Сумма текущей прибыли/убытка: {'{:.2f}'.format(total_profit)}")
+    return "\n".join(report_lines)
+
+def format_wide_report(data):
+    """Формирует строку широкого отчета."""
+    if not 
+        return "❌ Не удалось получить данные для отчета."
+    report_lines = ["📊 Широкий отчет по криптосчетам:\n"]
+    for item in 
+        name = item.get('name', 'N/A')
+        profit = item.get('current_profit', 'N/A')
+        cap = item.get('capitalization', 'N/A')
+        turnover = item.get('turnover', 'N/A')
+        deposit_pct = item.get('deposit_pct', 'N/A')
+        avg_price = item.get('avg_price', 'N/A')
+        current_price = item.get('current_price', 'N/A')
+
+        report_lines.append(
+            f"🔹 {name}\n"
+            f"   - Прибыль/Убыток: {'{:.2f}'.format(profit) if isinstance(profit, (int, float)) else profit}\n"
+            f"   - Капитализация: {cap}\n"
+            f"   - Оборот: {turnover}\n"
+            f"   - Депозит %: {deposit_pct}\n"
+            f"   - Средний курс: {avg_price}\n"
+            f"   - Текущий курс: {current_price}\n"
+        )
+    return "\n".join(report_lines)
+
+
+def send_message_with_keyboard(user_id, text, keyboard=None):
+    """Отправляет сообщение с опциональной клавиатурой (меню)."""
     if not VIBER_TOKEN:
-        print("❌ VIBER_TOKEN not set in environment variables")
-        return False
-        
+        logger.error("VIBER_TOKEN not set.")
+        return
+
     try:
         url = 'https://chatapi.viber.com/pa/send_message'
         headers = {
             'X-Viber-Auth-Token': VIBER_TOKEN,
             'Content-Type': 'application/json'
         }
+
         payload = {
             'receiver': user_id,
             'type': 'text',
             'text': text
         }
-        
-        # Добавляем клавиатуру если она есть
         if keyboard:
             payload['keyboard'] = keyboard
-        
+
         response = requests.post(url, json=payload, headers=headers, timeout=10)
-        
         if response.status_code == 200:
-            result = response.json()
-            if result.get('status') == 0:
-                print(f"📤 Sent to {user_id[:8]}...: {text[:30]}...")
-                return True
-            else:
-                print(f"❌ Viber API error: {result}")
-                return False
+            logger.info(f"📤 Sent to {user_id[:8]}...: {text[:50]}...")
         else:
-            print(f"❌ HTTP error: {response.status_code} - {response.text}")
-            return False
-        
+            logger.error(f"❌ Send failed with status {response.status_code}: {response.text}")
     except Exception as e:
-        print(f"❌ Send error: {e}")
-        return False
+        logger.error(f"❌ Send error: {e}")
 
-def send_file_message(user_id, filepath, filename=None):
-    """Отправляет файл пользователю через Viber API"""
-    if not VIBER_TOKEN:
-        print("❌ VIBER_TOKEN not set in environment variables")
-        return False
-    
-    if not os.path.exists(filepath):
-        print(f"❌ File not found: {filepath}")
-        return False
-    
-    try:
-        # Получаем размер файла
-        file_size = os.path.getsize(filepath)
-        file_size_mb = file_size / (1024 * 1024)
-        
-        # Проверяем лимит Viber (обычно 20MB)
-        if file_size_mb > 20:
-            print(f"❌ File too large: {file_size_mb:.2f}MB (max 20MB)")
-            return False
-        
-        # Если имя файла не указано, используем базовое имя
-        if not filename:
-            filename = os.path.basename(filepath)
-        
-        # Загружаем файл на сервер Viber
-        upload_url = 'https://chatapi.viber.com/pa/upload_file'
-        headers = {
-            'X-Viber-Auth-Token': VIBER_TOKEN
-        }
-        
-        with open(filepath, 'rb') as f:
-            files = {'file': (filename, f, 'text/plain')}
-            upload_response = requests.post(upload_url, headers=headers, files=files)
-        
-        if upload_response.status_code == 200:
-            upload_result = upload_response.json()
-            if upload_result.get('status') == 0:
-                file_url = upload_result.get('media')
-                
-                # Отправляем сообщение с файлом
-                message_url = 'https://chatapi.viber.com/pa/send_message'
-                message_payload = {
-                    'receiver': user_id,
-                    'type': 'file',
-                    'media': file_url,
-                    'size': file_size,
-                    'file_name': filename
-                }
-                
-                message_response = requests.post(message_url, 
-                                                json=message_payload, 
-                                                headers={'X-Viber-Auth-Token': VIBER_TOKEN, 'Content-Type': 'application/json'})
-                
-                if message_response.status_code == 200:
-                    result = message_response.json()
-                    if result.get('status') == 0:
-                        print(f"📁 File sent to {user_id[:8]}...: {filename} ({file_size_mb:.2f}MB)")
-                        return True
-                    else:
-                        print(f"❌ Viber file message error: {result}")
-                        return False
+def get_main_menu_keyboard():
+    """Создает клавиатуру для главного меню."""
+    return {
+        "Type": "keyboard",
+        "DefaultHeight": True,
+        "Buttons": [
+            {
+                "ActionType": "reply",
+                "ActionBody": "crypto_menu",
+                "Text": "🪙 Крипто"
+            },
+            {
+                "ActionType": "reply",
+                "ActionBody": "help_info",
+                "Text": "❓ Помощь"
+            }
+        ]
+    }
+
+def get_crypto_menu_keyboard():
+    """Создает клавиатуру для подменю Крипто."""
+    return {
+        "Type": "keyboard",
+        "DefaultHeight": True,
+        "Buttons": [
+            {
+                "ActionType": "reply",
+                "ActionBody": "quick_report",
+                "Text": "📉 Быстрый отчет"
+            },
+            {
+                "ActionType": "reply",
+                "ActionBody": "wide_report",
+                "Text": "📊 Широкий отчет"
+            },
+            {
+                "ActionType": "reply",
+                "ActionBody": "back_to_main",
+                "Text": "🔙 Назад"
+            }
+        ]
+    }
+
+@app.route('/webhook', methods=['GET', 'POST', 'HEAD'])
+def webhook():
+    if request.method == 'GET':
+        return jsonify({"status": "ok"})
+
+    if request.method == 'POST':
+        try:
+            data = request.get_json()
+            logger.info(f"Received webhook  {data}")
+
+            user_id = None
+            message_text = None
+            sender_name = data.get('sender', {}).get('name', 'Unknown')
+
+            if data.get('event') == 'message':
+                user_id = data['sender']['id']
+                if data['message']['type'] == 'text':
+                    message_text = data['message']['text'].lower()
                 else:
-                    print(f"❌ HTTP error sending file message: {message_response.status_code}")
-                    return False
-            else:
-                print(f"❌ Viber upload error: {upload_result}")
-                return False
-        else:
-            print(f"❌ HTTP upload error: {upload_response.status_code}")
-            return False
-            
-    except Exception as e:
-        print(f"❌ File send error: {e}")
-        return False
+                    return jsonify({"status": 0})
 
-@app.route('/status')
-def status():
-    """Эндпоинт для проверки статуса бота"""
-    return jsonify({
-        "status": "running",
-        "btc_price": current_btc_price,
-        "authorized_users": len(AUTHORIZED_USER_IDS),
-        "timestamp": datetime.now().isoformat()
-    })
+            elif data.get('event') == 'conversation_started':
+                user_id = data['user']['id']
+
+            if not user_id:
+                logger.warning("No user_id found in webhook data.")
+                return jsonify({"status": 0})
+
+            if not is_authorized_user(user_id):
+                logger.info(f"⛔ Unauthorized access attempt from: {user_id}")
+                send_message_with_keyboard(user_id, "❌ Доступ запрещен. Этот бот приватный.")
+                return jsonify({"status": 0})
+
+            action_body = data.get('message', {}).get('text')
+            if action_body:
+                 if action_body == "crypto_menu":
+                     send_message_with_keyboard(user_id, "Выберите действие в Крипто:", get_crypto_menu_keyboard())
+                 elif action_body == "help_info":
+                     send_message_with_keyboard(user_id, "🤖 Это приватный бот.\nИспользуйте меню для навигации.")
+                 elif action_body == "back_to_main":
+                     send_message_with_keyboard(user_id, "Возврат в главное меню.", get_main_menu_keyboard())
+                 elif action_body == "quick_report":
+                     crypto_data, error = get_crypto_data_from_notion_http()
+                     if error:
+                         send_message_with_keyboard(user_id, error)
+                     else:
+                         report = format_quick_report(crypto_data)
+                         send_message_with_keyboard(user_id, report, get_crypto_menu_keyboard())
+                 elif action_body == "wide_report":
+                     crypto_data, error = get_crypto_data_from_notion_http()
+                     if error:
+                         send_message_with_keyboard(user_id, error)
+                     else:
+                         report = format_wide_report(crypto_data)
+                         send_message_with_keyboard(user_id, report, get_crypto_menu_keyboard())
+                 else:
+                     pass
+
+            return jsonify({"status": 0})
+
+        except Exception as e:
+            logger.error(f"❌ Error processing webhook: {e}")
+            return jsonify({"status": 1})
+
+def send_message(user_id, text): # Оставлена для совместимости
+    send_message_with_keyboard(user_id, text)
 
 if __name__ == '__main__':
-    print("🚀 Starting Viber Crypto Bot...")
-    print(f"📍 Port: {PORT}")
-    print("⏰ BTC price updates will be sent every 30 seconds")
-    
-    # Получаем первоначальный курс BTC
-    print("🔄 Getting initial BTC price...")
-    initial_btc_data = get_btc_price()
-    if initial_btc_data:
-        current_btc_price = initial_btc_data['price']
-        change_24h = initial_btc_data['change_24h']
-        print(f"✅ Initial BTC price: ${current_btc_price:,.2f} | Change: {change_24h:.2f}%")
-    else:
-        print("❌ Failed to get initial BTC price")
-    
-    # Запускаем scheduler в отдельном потоке
-    scheduler_thread = threading.Thread(target=btc_scheduler, daemon=True)
-    scheduler_thread.start()
-    print("✅ BTC scheduler started")
-    
-    # Запускаем Flask приложение
-    print(f"🌐 Starting web server on port {PORT}")
+    print(f"🚀 Starting on port {PORT}")
     app.run(host='0.0.0.0', port=int(PORT), debug=False)
