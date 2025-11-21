@@ -221,7 +221,7 @@ def format_quick_report(data):
         return "❌ Не удалось получить данные для отчета."
     report_lines = ["📈 Быстрый отчет по криптосчетам:\n"]
     total_profit = 0
-    for item in data:
+    for item in 
         profit = item.get('current_profit', 0)
         # Проверяем, является ли значение числом, прежде чем складывать и форматировать
         if profit is not None and isinstance(profit, (int, float)):
@@ -232,7 +232,10 @@ def format_quick_report(data):
             formatted_profit = str(profit) if profit is not None else "N/A"
 
         report_lines.append(f"- {item.get('name', 'N/A')}: {formatted_profit}")
-    report_lines.append(f"\n💰 Сумма текущей прибыли/убытка: {total_profit:.2f if isinstance(total_profit, (int, float)) else total_profit}")
+
+    # Вычисляем форматированную строку для total_profit отдельно
+    formatted_total_profit = f"{total_profit:.2f}" if isinstance(total_profit, (int, float)) else str(total_profit)
+    report_lines.append(f"\n💰 Сумма текущей прибыли/убытка: {formatted_total_profit}")
     return "\n".join(report_lines)
 
 def format_wide_report(data):
@@ -240,7 +243,7 @@ def format_wide_report(data):
     if not data:
         return "❌ Не удалось получить данные для отчета."
     report_lines = ["📊 Широкий отчет по криптосчетам:\n"]
-    for item in data:
+    for item in 
         name = item.get('name', 'N/A')
         profit = item.get('current_profit', 'N/A')
         cap = item.get('capitalization', 'N/A')
