@@ -217,28 +217,39 @@ def get_crypto_data_from_notion_http():
 
 def format_quick_report(data):
     """Формирует строку быстрого отчета, исключая записи с нулевой прибылью/убытком."""
-    if not data:
+    if not 
         return "❌ Не удалось получить данные для отчета."
-    
-    # Фильтрация данных: оставляем только те, у которых current_profit не является 0, 0.0, "0", "0.0" или None
-    # Также преобразуем значение к числу, если это возможно, для корректного суммирования.
+
+    # Фильтрация данных: оставляем только те, у которых current_profit не является 0, 0.0, "0", "0.0", None или NaN.
     filtered_items = []
-    for item in data:
+    for item in 
         raw_profit = item.get('current_profit', 0)
         profit_numeric = None
-        
-        # Проверяем, является ли значение числом (int или float)
-        if isinstance(raw_profit, (int, float)):
-            profit_numeric = raw_profit
-        # Проверяем, является ли значение строкой, которую можно преобразовать в число
+
+        # Проверяем тип и значение raw_profit
+        if raw_profit is None:
+            # None считаем нулевым
+            profit_numeric = 0
+        elif isinstance(raw_profit, (int, float)):
+            # Число проверяем на NaN (NaN != NaN всегда True)
+            if raw_profit != raw_profit: # Это проверка на NaN
+                 profit_numeric = 0
+            else:
+                profit_numeric = raw_profit
         elif isinstance(raw_profit, str):
+            # Пытаемся преобразовать строку в число
             try:
-                profit_numeric = float(raw_profit)
+                float_val = float(raw_profit)
+                # Проверяем, не NaN ли это
+                if float_val != float_val: # Это проверка на NaN
+                     profit_numeric = 0
+                else:
+                     profit_numeric = float_val
             except ValueError:
-                # Если строку нельзя преобразовать в число, считаем её нулевой
+                # Если строку нельзя преобразовать, считаем её нулевой
                 profit_numeric = 0
-        # Для None или других типов считаем прибыль нулевой
         else:
+            # Для любых других типов считаем прибыль нулевой
             profit_numeric = 0
 
         # Добавляем в отфильтрованный список, только если значение не ноль
@@ -247,15 +258,20 @@ def format_quick_report(data):
             item_for_report = item.copy() # Копируем, чтобы не менять оригинал
             item_for_report['current_profit_numeric'] = profit_numeric
             filtered_items.append(item_for_report)
+            # Логируем для отладки
+            logger.debug(f"Kept item: {item.get('name', 'N/A')}, original: {item.get('current_profit')}, numeric: {profit_numeric}")
+
 
     if not filtered_items:
+        logger.info("No non-zero profit items found after filtering.")
         return "📉 Нет криптосчетов с ненулевой прибылью/убытком для отчета."
 
+    logger.info(f"Found {len(filtered_items)} non-zero profit items.")
     report_lines = ["📈 Быстрый отчет по криптосчетам:\n"]
     total_profit = 0
-    for item in filtered_items:
+    for item in 
         profit_numeric = item.get('current_profit_numeric', 0)
-        # Суммируем числовое значение
+        # Суммируем числовое значение (даже если оно отрицательное)
         total_profit += profit_numeric
         # Форматируем для отображения
         formatted_profit = f"{profit_numeric:.2f}"
