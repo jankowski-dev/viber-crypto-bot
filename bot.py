@@ -222,7 +222,7 @@ def format_quick_report(data):
     
     # Фильтрация данных: оставляем только те, у которых current_profit не является 0, 0.0, "0", "0.0" или None
     filtered_data = []
-    for item in data:
+    for item in 
         profit = item.get('current_profit', 0)
         # Проверяем, является ли значение "нулевым" числом (0 или 0.0) или строкой "0"/"0.0"
         if profit is not None and profit != 0 and profit != 0.0 and profit != "0" and profit != "0.0":
@@ -230,7 +230,7 @@ def format_quick_report(data):
         # else:
         #     logger.debug(f"Filtering out item: {item.get('name', 'N/A')} with profit: {profit}")
 
-    if not filtered_data:
+    if not filtered_
         return "📉 Нет криптосчетов с ненулевой прибылью/убытком для отчета."
 
     report_lines = ["📈 Быстрый отчет по криптосчетам:\n"]
@@ -411,7 +411,7 @@ def webhook():
                      if message_text: # Проверяем, было ли это текстовое сообщение
                          logger.info(f"Received unknown action body, treating as text command: {message_text}")
                          # Можно добавить обработку старых команд или игнорировать
-                         send_message_with_keyboard(user_id, f"🤔 Неизвестная команда: {message_text}, get_main_menu_keyboard())
+                         send_message_with_keyboard(user_id, f"🤔 Неизвестная команда: {message_text}", get_main_menu_keyboard())
 
             logger.info("--- Webhook processing finished ---")
             return jsonify({"status": 0})
