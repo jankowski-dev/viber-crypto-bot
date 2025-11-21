@@ -94,9 +94,10 @@ def get_crypto_data_from_notion_http():
             # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
             capitalization_usd_value = 'Тип неизвестен (Rollup)'
 
-            # Свойство: 'Текущая прибыль' (Тип: formula, ID: Zp%5Bd)
-            current_profit_prop = props.get("Текущая прибыль", {})
-            current_profit_formula_obj = current_profit_prop.get("formula", {})
+            # --- ИСПРАВЛЕНО: Используем "Текущая прибыль formula" вместо "Текущая прибыль" ---
+            # Свойство: 'Текущая прибыль formula' (Тип: formula, ID: Zp%5Bd)
+            current_profit_formula_prop = props.get("Текущая прибыль formula", {}) # <-- Используем правильное имя
+            current_profit_formula_obj = current_profit_formula_prop.get("formula", {}) # <-- Для formula получаем объект formula
             current_profit_value = current_profit_formula_obj.get("number", current_profit_formula_obj.get("string", current_profit_formula_obj.get("date", "N/A")))
 
             # Свойство: 'Cделки +' (Тип: formula, ID: %5Be%3E%3C)
@@ -190,7 +191,7 @@ def get_crypto_data_from_notion_http():
             parsed_data.append({
                 "page_id": page_id,
                 "name": name_value, # Используем значение заголовка (или "N/A (Без имени)")
-                "current_profit": current_profit_value, # Может быть числом, строкой или None
+                "current_profit": current_profit_value, # Теперь из 'Текущая прибыль formula' (может быть числом, строкой или None)
                 "capitalization": capitalization_usd_value, # Rollup - строка
                 "turnover": turnover_value, # Formula - может быть числом или строкой
                 "deposit_pct": deposit_pct_value, # Formula - может быть числом или строкой
@@ -217,24 +218,30 @@ def get_crypto_data_from_notion_http():
 
 def format_quick_report(data):
     """Формирует строку быстрого отчета, исключая записи с нулевой прибылью/убытком."""
-    if not data: # <-- Исправлено: добавлена переменная 'data'
+    if not  # <-- Исправлено: добавлена переменная 'data'
+        logger.info("No data received for quick report.")
         return "❌ Не удалось получить данные для отчета."
 
+    logger.info(f"Starting quick report formatting with {len(data)} items.")
     # Фильтрация данных: оставляем только те, у которых current_profit не является 0, 0.0, "0", "0.0", None или NaN.
     filtered_items = []
-    for item in data: # <-- Исправлено: добавлена переменная 'data'
+    for item in  # <-- Исправлено: добавлена переменная 'data'
         raw_profit = item.get('current_profit', 0)
+        logger.debug(f"Processing item: {item.get('name', 'N/A')}, raw_profit: {raw_profit}, type: {type(raw_profit)}")
+        
         profit_numeric = None
 
         # Проверяем тип и значение raw_profit
         if raw_profit is None:
-            # None считаем нулевым
+            logger.debug(f"  raw_profit is None -> profit_numeric = 0")
             profit_numeric = 0
         elif isinstance(raw_profit, (int, float)):
             # Число проверяем на NaN (NaN != NaN всегда True)
             if raw_profit != raw_profit: # Это проверка на NaN
+                 logger.debug(f"  raw_profit is NaN -> profit_numeric = 0")
                  profit_numeric = 0
             else:
+                logger.debug(f"  raw_profit is a number -> profit_numeric = {raw_profit}")
                 profit_numeric = raw_profit
         elif isinstance(raw_profit, str):
             # Пытаемся преобразовать строку в число
@@ -242,24 +249,29 @@ def format_quick_report(data):
                 float_val = float(raw_profit)
                 # Проверяем, не NaN ли это
                 if float_val != float_val: # Это проверка на NaN
+                     logger.debug(f"  raw_profit string '{raw_profit}' converts to NaN -> profit_numeric = 0")
                      profit_numeric = 0
                 else:
+                     logger.debug(f"  raw_profit string '{raw_profit}' converts to number -> profit_numeric = {float_val}")
                      profit_numeric = float_val
             except ValueError:
                 # Если строку нельзя преобразовать, считаем её нулевой
+                logger.debug(f"  raw_profit string '{raw_profit}' cannot be converted to number -> profit_numeric = 0")
                 profit_numeric = 0
         else:
             # Для любых других типов считаем прибыль нулевой
+            logger.debug(f"  raw_profit is of unknown type {type(raw_profit)} -> profit_numeric = 0")
             profit_numeric = 0
 
         # Добавляем в отфильтрованный список, только если значение не ноль
         if profit_numeric != 0:
+            logger.debug(f"  Keeping item {item.get('name', 'N/A')}, profit_numeric = {profit_numeric}")
             # Заменяем оригинальное значение на числовое для последующих операций
             item_for_report = item.copy() # Копируем, чтобы не менять оригинал
             item_for_report['current_profit_numeric'] = profit_numeric
             filtered_items.append(item_for_report)
-            # Логируем для отладки
-            logger.debug(f"Kept item: {item.get('name', 'N/A')}, original: {item.get('current_profit')}, numeric: {profit_numeric}")
+        else:
+            logger.debug(f"  Filtering out item {item.get('name', 'N/A')}, profit_numeric = {profit_numeric}")
 
 
     if not filtered_items: # <-- Исправлено: добавлена переменная 'filtered_items'
