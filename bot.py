@@ -58,84 +58,74 @@ def get_crypto_data_from_notion_http():
 
             # --- Извлечение свойств с использованием точных имен из notion_properties_mapping.txt ---
             # Свойство: 'Прибыльные сделки Rollup' (Тип: rollup, ID: %3A%3A%5BW)
-            прибыльные_сделки_rollup_prop = props.get("Прибыльные сделки Rollup", {})
             # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
-            прибыльные_сделки_rollup_value = 'Тип неизвестен'
+            profit_making_trades_rollup_value = 'Тип неизвестен (Rollup)'
 
             # Свойство: 'Ср. доходность, %' (Тип: rollup, ID: %3A%3DWF)
-            ср._доходность,_%_prop = props.get("Ср. доходность, %", {})
             # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
-            ср._доходность,_%_value = 'Тип неизвестен'
+            avg_yield_pct_value = 'Тип неизвестен (Rollup)'
 
             # Свойство: 'Депозит, %' (Тип: formula, ID: %3FpZT)
-            депозит,_%_prop = props.get("Депозит, %", {})
-            депозит,_%_formula_obj = депозит,_%_prop.get("formula", {})
-            депозит,_%_value = депозит,_%_formula_obj.get("number", депозит,_%_formula_obj.get("string", депозит,_%_formula_obj.get("date", "N/A")))
+            deposit_pct_prop = props.get("Депозит, %", {})
+            deposit_pct_formula_obj = deposit_pct_prop.get("formula", {})
+            deposit_pct_value = deposit_pct_formula_obj.get("number", deposit_pct_formula_obj.get("string", deposit_pct_formula_obj.get("date", "N/A")))
 
             # Свойство: 'Комиссии' (Тип: rollup, ID: CkpA)
-            комиссии_prop = props.get("Комиссии", {})
             # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
-            комиссии_value = 'Тип неизвестен'
+            fees_value = 'Тип неизвестен (Rollup)'
 
             # Свойство: 'Прибыль / Убыток' (Тип: rollup, ID: DM%3Ac)
-            прибыль_/_убыток_prop = props.get("Прибыль / Убыток", {})
             # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
-            прибыль_/_убыток_value = 'Тип неизвестен'
+            profit_loss_value = 'Тип неизвестен (Rollup)'
 
             # Свойство: 'Оборот открытых Rollup' (Тип: rollup, ID: DomP)
-            оборот_открытых_rollup_prop = props.get("Оборот открытых Rollup", {})
             # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
-            оборот_открытых_rollup_value = 'Тип неизвестен'
+            open_turnover_rollup_value = 'Тип неизвестен (Rollup)'
 
             # Свойство: 'Текущая' (Тип: rollup, ID: Jl%7D%5D)
-            текущая_prop = props.get("Текущая", {})
             # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
-            текущая_value = 'Тип неизвестен'
+            current_rollup_value = 'Тип неизвестен (Rollup)'
 
             # Свойство: 'Капитализация, $' (Тип: rollup, ID: Js%7CC)
-            капитализация,_$_prop = props.get("Капитализация, $", {})
             # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
-            капитализация,_$_value = 'Тип неизвестен'
+            capitalization_usd_value = 'Тип неизвестен (Rollup)'
 
             # Свойство: 'Текущая прибыль' (Тип: formula, ID: Zp%5Bd)
-            текущая_прибыль_prop = props.get("Текущая прибыль", {})
-            текущая_прибыль_formula_obj = текущая_прибыль_prop.get("formula", {})
-            текущая_прибыль_value = текущая_прибыль_formula_obj.get("number", текущая_прибыль_formula_obj.get("string", текущая_прибыль_formula_obj.get("date", "N/A")))
+            current_profit_prop = props.get("Текущая прибыль", {})
+            current_profit_formula_obj = current_profit_prop.get("formula", {})
+            current_profit_value = current_profit_formula_obj.get("number", current_profit_formula_obj.get("string", current_profit_formula_obj.get("date", "N/A")))
 
             # Свойство: 'Cделки +' (Тип: formula, ID: %5Be%3E%3C)
-            cделки_+_prop = props.get("Cделки +", {})
-            cделки_+_formula_obj = cделки_+_prop.get("formula", {})
-            cделки_+_value = cделки_+_formula_obj.get("number", cделки_+_formula_obj.get("string", cделки_+_formula_obj.get("date", "N/A")))
+            deals_plus_prop = props.get("Cделки +", {})
+            deals_plus_formula_obj = deals_plus_prop.get("formula", {})
+            deals_plus_value = deals_plus_formula_obj.get("number", deals_plus_formula_obj.get("string", deals_plus_formula_obj.get("date", "N/A")))
 
             # Свойство: 'Текущий курс' (Тип: rollup, ID: %5BlCP)
-            текущий_курс_prop = props.get("Текущий курс", {})
             # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
-            текущий_курс_value = 'Тип неизвестен'
+            current_price_rollup_value = 'Тип неизвестен (Rollup)'
 
             # Свойство: 'Формула прибыли' (Тип: formula, ID: cs%60X)
-            формула_прибыли_prop = props.get("Формула прибыли", {})
-            формула_прибыли_formula_obj = формула_прибыли_prop.get("formula", {})
-            формула_прибыли_value = формула_прибыли_formula_obj.get("number", формула_прибыли_formula_obj.get("string", формула_прибыли_formula_obj.get("date", "N/A")))
+            profit_formula_prop = props.get("Формула прибыли", {})
+            profit_formula_formula_obj = profit_formula_prop.get("formula", {})
+            profit_formula_value = profit_formula_formula_obj.get("number", profit_formula_formula_obj.get("string", profit_formula_formula_obj.get("date", "N/A")))
 
             # Свойство: 'Чистая прибыль Rollup' (Тип: rollup, ID: e%3B%3Fy)
-            чистая_прибыль_rollup_prop = props.get("Чистая прибыль Rollup", {})
             # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
-            чистая_прибыль_rollup_value = 'Тип неизвестен'
+            net_profit_rollup_value = 'Тип неизвестен (Rollup)'
 
             # Свойство: 'Доходность, %' (Тип: formula, ID: fy%3F%5E)
-            доходность,_%_prop = props.get("Доходность, %", {})
-            доходность,_%_formula_obj = доходность,_%_prop.get("formula", {})
-            доходность,_%_value = доходность,_%_formula_obj.get("number", доходность,_%_formula_obj.get("string", доходность,_%_formula_obj.get("date", "N/A")))
+            yield_pct_prop = props.get("Доходность, %", {})
+            yield_pct_formula_obj = yield_pct_prop.get("formula", {})
+            yield_pct_value = yield_pct_formula_obj.get("number", yield_pct_formula_obj.get("string", yield_pct_formula_obj.get("date", "N/A")))
 
             # Свойство: 'Оборот закрытых Rollup' (Тип: rollup, ID: kBOl)
-            оборот_закрытых_rollup_prop = props.get("Оборот закрытых Rollup", {})
             # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
-            оборот_закрытых_rollup_value = 'Тип неизвестен'
+            closed_turnover_rollup_value = 'Тип неизвестен (Rollup)'
 
             # Свойство: 'Чистая прибыль' (Тип: formula, ID: kBU%60)
-            чистая_прибыль_prop = props.get("Чистая прибыль", {})
-            чистая_прибыль_formula_obj = чистая_прибыль_prop.get("formula", {})
-            чистая_прибыль_value = чистая_прибыль_formula_obj.get("number", чистая_прибыль_formula_obj.get("string", чистая_прибыль_formula_obj.get("date", "N/A")))
+            net_profit_prop = props.get("Чистая прибыль", {})
+            net_profit_formula_obj = net_profit_prop.get("formula", {})
+            net_profit_value = net_profit_formula_obj.get("number", net_profit_formula_obj.get("string", net_profit_formula_obj.get("date", "N/A")))
 
             # Свойство: 'Date' (Тип: date, ID: laaW)
             date_prop = props.get("Date", {})
@@ -143,44 +133,40 @@ def get_crypto_data_from_notion_http():
             date_value = date_date_obj.get("start", "N/A") if date_date_obj else "N/A"
 
             # Свойство: 'Ср. срок Rollup' (Тип: rollup, ID: luu%7B)
-            ср._срок_rollup_prop = props.get("Ср. срок Rollup", {})
             # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
-            ср._срок_rollup_value = 'Тип неизвестен'
+            avg_duration_rollup_value = 'Тип неизвестен (Rollup)'
 
             # Свойство: 'Криптосчет' (Тип: relation, ID: o%3CpV)
-            криптосчет_prop = props.get("Криптосчет", {})
             # Тип 'relation' неизвестен. Проверьте документацию Notion API.
-            криптосчет_value = 'Тип неизвестен'
+            crypto_account_relation_value = 'Тип неизвестен (Relation)'
 
             # Свойство: 'Активных' (Тип: rollup, ID: qOe%40)
-            активных_prop = props.get("Активных", {})
             # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
-            активных_value = 'Тип неизвестен'
+            active_count_value = 'Тип неизвестен (Rollup)'
 
             # Свойство: 'Оборот' (Тип: formula, ID: u%40A%3E)
-            оборот_prop = props.get("Оборот", {})
-            оборот_formula_obj = оборот_prop.get("formula", {})
-            оборот_value = оборот_formula_obj.get("number", оборот_formula_obj.get("string", оборот_formula_obj.get("date", "N/A")))
+            turnover_prop = props.get("Оборот", {})
+            turnover_formula_obj = turnover_prop.get("formula", {})
+            turnover_value = turnover_formula_obj.get("number", turnover_formula_obj.get("string", turnover_formula_obj.get("date", "N/A")))
 
             # Свойство: 'Оборотные, $' (Тип: formula, ID: yIzH)
-            оборотные,_$_prop = props.get("Оборотные, $", {})
-            оборотные,_$_formula_obj = оборотные,_$_prop.get("formula", {})
-            оборотные,_$_value = оборотные,_$_formula_obj.get("number", оборотные,_$_formula_obj.get("string", оборотные,_$_formula_obj.get("date", "N/A")))
+            turnover_usd_prop = props.get("Оборотные, $", {})
+            turnover_usd_formula_obj = turnover_usd_prop.get("formula", {})
+            turnover_usd_value = turnover_usd_formula_obj.get("number", turnover_usd_formula_obj.get("string", turnover_usd_formula_obj.get("date", "N/A")))
 
             # Свойство: 'Ср. срок' (Тип: formula, ID: zAfo)
-            ср._срок_prop = props.get("Ср. срок", {})
-            ср._срок_formula_obj = ср._срок_prop.get("formula", {})
-            ср._срок_value = ср._срок_formula_obj.get("number", ср._срок_formula_obj.get("string", ср._срок_formula_obj.get("date", "N/A")))
+            avg_duration_prop = props.get("Ср. срок", {})
+            avg_duration_formula_obj = avg_duration_prop.get("formula", {})
+            avg_duration_value = avg_duration_formula_obj.get("number", avg_duration_formula_obj.get("string", avg_duration_formula_obj.get("date", "N/A")))
 
             # Свойство: 'Средний курс' (Тип: formula, ID: %7DwU%5E)
-            средний_курс_prop = props.get("Средний курс", {})
-            средний_курс_formula_obj = средний_курс_prop.get("formula", {})
-            средний_курс_value = средний_курс_formula_obj.get("number", средний_курс_formula_obj.get("string", средний_курс_formula_obj.get("date", "N/A")))
+            avg_price_prop = props.get("Средний курс", {})
+            avg_price_formula_obj = avg_price_prop.get("formula", {})
+            avg_price_value = avg_price_formula_obj.get("number", avg_price_formula_obj.get("string", avg_price_formula_obj.get("date", "N/A")))
 
             # Свойство: 'Оборот, мон.' (Тип: rollup, ID: ~%3Dk%5B)
-            оборот,_мон._prop = props.get("Оборот, мон.", {})
             # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
-            оборот,_мон._value = 'Тип неизвестен'
+            turnover_coins_rollup_value = 'Тип неизвестен (Rollup)'
 
             # Свойство: '' (Тип: title, ID: title) - Пустое имя, предположим это заголовок
             # ВНИМАНИЕ: Пустое имя свойства может вызвать проблемы. Лучше дать ему имя в Notion.
@@ -189,9 +175,9 @@ def get_crypto_data_from_notion_http():
             # name_title_array = name_prop.get("title", [])
             # name_value = name_title_array[0].get("text", {}).get("content", "N/A") if name_title_array else "N/A"
             # Пока оставим как есть, но рекомендуется исправить в Notion.
-            _prop = props.get("", {})
-            _title_array = _prop.get("title", [])
-            name_value = _title_array[0].get("text", {}).get("content", "N/A (Без имени)") if _title_array else "N/A (Без имени)"
+            name_prop = props.get("", {}) # Используем пустую строку как ключ
+            name_title_array = name_prop.get("title", [])
+            name_value = name_title_array[0].get("text", {}).get("content", "N/A (Без имени)") if name_title_array else "N/A (Без имени)"
 
 
             # --- Сбор данных в словарь ---
@@ -200,12 +186,12 @@ def get_crypto_data_from_notion_http():
             parsed_data.append({
                 "page_id": page_id,
                 "name": name_value, # Используем значение заголовка (или "N/A (Без имени)")
-                "current_profit": текущая_прибыль_value,
-                "capitalization": капитализация,_$_value, # Rollup
-                "turnover": оборот_value, # Formula
-                "deposit_pct": депозит,_%_value, # Formula
-                "avg_price": средний_курс_value, # Formula
-                "current_price": текущий_курс_value, # Rollup
+                "current_profit": current_profit_value,
+                "capitalization": capitalization_usd_value, # Rollup
+                "turnover": turnover_value, # Formula
+                "deposit_pct": deposit_pct_value, # Formula
+                "avg_price": avg_price_value, # Formula
+                "current_price": current_price_rollup_value, # Rollup
                 # Можно добавить и другие, если понадобятся
                 # "other_prop": other_value,
             })
