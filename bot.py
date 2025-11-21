@@ -216,12 +216,26 @@ def get_crypto_data_from_notion_http():
 
 
 def format_quick_report(data):
-    """Формирует строку быстрого отчета."""
-    if not data: # <-- Исправлено: добавлена переменная 'data'
+    """Формирует строку быстрого отчета, исключая записи с нулевой прибылью/убытком."""
+    if not data:
         return "❌ Не удалось получить данные для отчета."
+    
+    # Фильтрация данных: оставляем только те, у которых current_profit не является 0, 0.0, "0", "0.0" или None
+    filtered_data = []
+    for item in data:
+        profit = item.get('current_profit', 0)
+        # Проверяем, является ли значение "нулевым" числом (0 или 0.0) или строкой "0"/"0.0"
+        if profit is not None and profit != 0 and profit != 0.0 and profit != "0" and profit != "0.0":
+            filtered_data.append(item)
+        # else:
+        #     logger.debug(f"Filtering out item: {item.get('name', 'N/A')} with profit: {profit}")
+
+    if not filtered_data:
+        return "📉 Нет криптосчетов с ненулевой прибылью/убытком для отчета."
+
     report_lines = ["📈 Быстрый отчет по криптосчетам:\n"]
     total_profit = 0
-    for item in data: # <-- Исправлено: добавлена переменная 'data'
+    for item in 
         profit = item.get('current_profit', 0)
         # Проверяем, является ли значение числом, прежде чем складывать и форматировать
         if profit is not None and isinstance(profit, (int, float)):
@@ -231,44 +245,12 @@ def format_quick_report(data):
             # Если не число, используем строковое представление
             formatted_profit = str(profit) if profit is not None else "N/A"
 
+        # Выводим название криптосчета
         report_lines.append(f"- {item.get('name', 'N/A')}: {formatted_profit}")
 
     # Вычисляем форматированную строку для total_profit отдельно
     formatted_total_profit = f"{total_profit:.2f}" if isinstance(total_profit, (int, float)) else str(total_profit)
     report_lines.append(f"\n💰 Сумма текущей прибыли/убытка: {formatted_total_profit}")
-    return "\n".join(report_lines)
-
-def format_wide_report(data):
-    """Формирует строку широкого отчета."""
-    if not data: # <-- Исправлено: добавлена переменная 'data'
-        return "❌ Не удалось получить данные для отчета."
-    report_lines = ["📊 Широкий отчет по криптосчетам:\n"]
-    for item in data: # <-- Исправлено: добавлена переменная 'data'
-        name = item.get('name', 'N/A')
-        profit = item.get('current_profit', 'N/A')
-        cap = item.get('capitalization', 'N/A')
-        turnover = item.get('turnover', 'N/A')
-        deposit_pct = item.get('deposit_pct', 'N/A')
-        avg_price = item.get('avg_price', 'N/A')
-        current_price = item.get('current_price', 'N/A')
-
-        # Форматирование значений только если они числовые
-        formatted_profit = f"{profit:.2f}" if isinstance(profit, (int, float)) else profit
-        formatted_cap = f"{cap:.2f}" if isinstance(cap, (int, float)) else cap
-        formatted_turnover = f"{turnover:.2f}" if isinstance(turnover, (int, float)) else turnover
-        formatted_deposit_pct = f"{deposit_pct:.2f}" if isinstance(deposit_pct, (int, float)) else deposit_pct
-        formatted_avg_price = f"{avg_price:.2f}" if isinstance(avg_price, (int, float)) else avg_price
-        formatted_current_price = f"{current_price:.2f}" if isinstance(current_price, (int, float)) else current_price
-
-        report_lines.append(
-            f"🔹 {name}\n"
-            f"   - Прибыль/Убыток: {formatted_profit}\n"
-            f"   - Капитализация: {formatted_cap}\n"
-            f"   - Оборот: {formatted_turnover}\n"
-            f"   - Депозит %: {formatted_deposit_pct}\n"
-            f"   - Средний курс: {formatted_avg_price}\n"
-            f"   - Текущий курс: {formatted_current_price}\n"
-        )
     return "\n".join(report_lines)
 
 
@@ -323,6 +305,7 @@ def get_main_menu_keyboard():
 
 def get_crypto_menu_keyboard():
     """Создает клавиатуру для подменю Крипто."""
+    # Удалена кнопка 'wide_report'
     return {
         "Type": "keyboard",
         "DefaultHeight": True,
@@ -331,11 +314,6 @@ def get_crypto_menu_keyboard():
                 "ActionType": "reply",
                 "ActionBody": "quick_report",
                 "Text": "📉 Быстрый отчет"
-            },
-            {
-                "ActionType": "reply",
-                "ActionBody": "wide_report",
-                "Text": "📊 Широкий отчет"
             },
             {
                 "ActionType": "reply",
@@ -426,22 +404,14 @@ def webhook():
                      else:
                          report = format_quick_report(crypto_data)
                          send_message_with_keyboard(user_id, report, get_crypto_menu_keyboard()) # Возвращаем к подменю после отчета
-                 elif action_body == "wide_report":
-                     logger.info("Handling 'wide_report' action.")
-                     crypto_data, error = get_crypto_data_from_notion_http()
-                     if error:
-                         logger.error(f"Error fetching data for wide report: {error}")
-                         send_message_with_keyboard(user_id, error)
-                     else:
-                         report = format_wide_report(crypto_data)
-                         send_message_with_keyboard(user_id, report, get_crypto_menu_keyboard()) # Возвращаем к подменю после отчета
+                 # Удалена обработка 'wide_report'
                  else:
                      logger.info(f"Unknown action body: {action_body}")
                      # Возможно, это текстовое сообщение, не связанное с меню
                      if message_text: # Проверяем, было ли это текстовое сообщение
                          logger.info(f"Received unknown action body, treating as text command: {message_text}")
                          # Можно добавить обработку старых команд или игнорировать
-                         send_message_with_keyboard(user_id, f"🤔 Неизвестная команда: {message_text}", get_main_menu_keyboard())
+                         send_message_with_keyboard(user_id, f"🤔 Неизвестная команда: {message_text}, get_main_menu_keyboard())
 
             logger.info("--- Webhook processing finished ---")
             return jsonify({"status": 0})
