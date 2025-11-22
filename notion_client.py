@@ -10,6 +10,9 @@ logger = logging.getLogger(__name__)
 
 NOTION_TOKEN = os.environ.get('NOTION_TOKEN')
 NOTION_DATABASE_ID = os.environ.get('NOTION_DATABASE_ID')
+# ID базы, где хранятся связанные страницы (например, "Криптосчета"). Нужно будет использовать для отдельного запроса.
+# ВАМ НУЖНО ЗНАТЬ этот ID!
+# RELATION_DATABASE_ID = os.environ.get('RELATION_DATABASE_ID') # Необязательно, если будете использовать кэширование ID
 NOTION_API_VERSION = "2022-06-28"
 
 if not NOTION_TOKEN or not NOTION_DATABASE_ID:
@@ -78,6 +81,35 @@ def fetch_all_pages_from_database(query_filter=None):
     return pages
 
 
+def get_title_from_relation_page(relation_page_id):
+    """
+    Получает заголовок (title) из связанной страницы Notion по её ID.
+    """
+    url = f"https://api.notion.com/v1/pages/{relation_page_id}"
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        page_data = response.json()
+        # Получаем заголовок (title)
+        properties = page_data.get("properties", {})
+        # Ищем свойство с типом 'title' (обычно это свойство с ID 'title')
+        title_prop = properties.get("title", {})
+        if title_prop.get("type") == "title":
+             title_array = title_prop.get("title", [])
+             if title_array:
+                 # Берем текст первого элемента заголовка
+                 title_text = title_array[0].get("text", {}).get("content", f"Untitled Page ({relation_page_id[-8:]})")
+                 return title_text
+        # Если заголовок не найден или пуст, возвращаем ID как запасной вариант
+        return f"Page ({relation_page_id[-8:]})"
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Ошибка при получении заголовка связанной страницы {relation_page_id}: {e}")
+        return f"Page ({relation_page_id[-8:]}) (Ошибка загр. заголовка)"
+    except Exception as e:
+        logger.error(f"Неожиданная ошибка при получении заголовка связанной страницы {relation_page_id}: {e}")
+        return f"Page ({relation_page_id[-8:]}) (Ошибка загр. заголовка)"
+
+
 def parse_notion_pages(pages):
     """
     Парсит список страниц Notion и извлекает нужные свойства.
@@ -92,7 +124,17 @@ def parse_notion_pages(pages):
         # Криптосчет (relation)
         crypto_account_raw = properties.get(PROPERTY_CRYPTO_ACCOUNT, {})
         crypto_account_relations = crypto_account_raw.get("relation", [])
-        crypto_account_value = crypto_account_relations[0].get("name", "N/A (Тип неизвестен)") if crypto_account_relations else "Нет связи"
+        if crypto_account_relations:
+             # Получаем ID связанной страницы
+             related_page_id = crypto_account_relations[0].get("id")
+             if related_page_id:
+                 # Пытаемся получить заголовок связанной страницы
+                 crypto_account_value = get_title_from_relation_page(related_page_id)
+             else:
+                 crypto_account_value = "N/A (Нет ID связи)"
+        else:
+             crypto_account_value = "Нет связи"
+
 
         # Текущая прибыль (formula)
         current_profit_raw = properties.get(PROPERTY_CURRENT_PROFIT, {})
