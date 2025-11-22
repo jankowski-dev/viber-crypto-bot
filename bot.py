@@ -14,8 +14,9 @@ app = Flask(__name__)
 VIBER_TOKEN = os.environ.get('VIBER_TOKEN')
 NOTION_TOKEN = os.environ.get('NOTION_TOKEN') # Токен интеграции
 NOTION_DATABASE_ID = os.environ.get('NOTION_DATABASE_ID') # ID базы данных
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY') # API ключ OpenAI
-OPENAI_API_URL = "https://api.openai.com/v1/chat/completions" # URL эндпоинта OpenAI
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY') # API ключ для support.by
+# --- ИЗМЕНЕНО: URL API support.by ---
+OPENAI_API_URL = "https://global.support.by/api/openai/v1/chat/completions" # URL эндпоинта support.by
 PORT = os.environ.get('PORT', 5000)
 
 # Ваши авторизованные ID пользователей
@@ -26,7 +27,8 @@ AUTHORIZED_USER_IDS = [
 logger.info("🤖 Private Viber Bot with Notion Integration (via AI) starting...")
 logger.info(f"🔐 Authorized users: {len(AUTHORIZED_USER_IDS)}")
 logger.info(f"📊 Notion DB ID: {NOTION_DATABASE_ID[-8:] if NOTION_DATABASE_ID else 'Not set'}...")
-logger.info(f"🧠 Using OpenAI API: {OPENAI_API_URL}")
+# --- ИЗМЕНЕНО: Сообщение об API ---
+logger.info(f"🧠 Using AI API: {OPENAI_API_URL} (Model: deepseek-reasoner)")
 
 def is_authorized_user(user_id):
     """Проверяет, авторизован ли пользователь"""
@@ -254,6 +256,7 @@ def send_data_to_ai_api(raw_data):
 
     # Формируем сообщение для ИИ
     # Промпт: Опишите, что ИИ должен сделать с raw_data
+    # --- ИЗМЕНЕНО: Добавлена роль 'developer' и изменена модель ---
     user_message_content = (
         "Проанализируй следующие данные криптосчетов. "
         "Отфильтруй те, у которых 'current_profit_raw' равен 0, 0.0, '0', '0.0', None или NaN. "
@@ -264,8 +267,13 @@ def send_data_to_ai_api(raw_data):
     )
 
     payload = {
-        "model": "gpt-3.5-turbo", # Укажите модель, которую вы хотите использовать
+        "model": "deepseek-reasoner", # --- ИЗМЕНЕНО: Указана модель deepseek-reasoner ---
         "messages": [
+            # --- ИЗМЕНЕНО: Добавлена роль 'developer' ---
+            {
+                "role": "developer",
+                "content": "You are a helpful assistant."
+            },
             {
                 "role": "user",
                 "content": user_message_content
