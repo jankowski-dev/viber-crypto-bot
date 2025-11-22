@@ -120,7 +120,7 @@ def webhook():
     if request.method == 'POST':
         try:
             data = request.get_json()
-            logger.info(f"Full webhook  {data}")
+            logger.info(f"Full webhook data: {data}")
             user_id = None
             message_text = None
             sender_name = data.get('sender', {}).get('name', 'Unknown')
