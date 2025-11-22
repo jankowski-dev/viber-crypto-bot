@@ -45,20 +45,33 @@ def check_notion_connection():
         "Notion-Version": "2022-06-28" # Указываем версию API
     }
 
-    # Попробуем выполнить простой запрос к базе данных (query с limit=0)
+    # Попробуем выполнить простой запрос к базе данных (query с пустым телом)
     url = f"https://api.notion.com/v1/databases/{NOTION_DATABASE_ID}/query"
-    payload = {"filter": {}, "start_cursor": None, "page_size": 0} # Запрос без фактического получения данных
+    # --- ИСПРАВЛЕНО: Пустое тело для проверки существования и доступа ---
+    payload = {}
 
     try:
         logger.info("Checking connection to Notion DB...")
         response = requests.post(url, headers=headers, json=payload, timeout=10)
         response.raise_for_status() # Возбуждает исключение для 4xx/5xx статусов
         logger.info("Successfully connected to Notion DB.")
+        # Если запрос успешен, можно вернуть сообщение об успехе
         return True, "✅ Подключение к базе данных Notion успешно!"
     except requests.exceptions.HTTPError as http_err:
         logger.error(f"HTTP error occurred while checking Notion connection: {http_err}")
         logger.error(f"Response content: {response.text}")
-        return False, f"❌ Ошибка HTTP при подключении к Notion: {http_err}"
+        # Важно: не возвращаем просто текст ошибки от Notion, т.к. он может быть длинным и непонятным.
+        # Лучше предоставить более общий текст, основанный на коде статуса.
+        if response.status_code == 400:
+            return False, f"❌ Ошибка 400: Некорректный запрос к базе данных Notion. Проверьте ID базы данных и права интеграции."
+        elif response.status_code == 401:
+            return False, f"❌ Ошибка 401: Не авторизован. Проверьте токен интеграции Notion."
+        elif response.status_code == 403:
+            return False, f"❌ Ошибка 403: Доступ запрещен. Проверьте права интеграции и доступ к базе данных."
+        elif response.status_code == 404:
+            return False, f"❌ Ошибка 404: База данных Notion не найдена. Проверьте ID базы данных."
+        else:
+            return False, f"❌ Ошибка HTTP при подключении к Notion: {http_err}"
     except requests.exceptions.RequestException as req_err:
         logger.error(f"Request error occurred while checking Notion connection: {req_err}")
         return False, f"❌ Ошибка запроса к Notion: {req_err}"
