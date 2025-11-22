@@ -3,7 +3,8 @@
 import requests
 import logging
 import os
-import math
+# math не нужен без фильтрации
+# import math
 
 logger = logging.getLogger(__name__)
 
@@ -22,32 +23,10 @@ headers = {
 }
 
 # --- ВАЖНО: Используем названия свойств из файла notion_properties_mapping.txt ---
-PROPERTY_NAME = ""  # Пустое имя, т.к. это заголовок (title), ключ - "title"
-PROPERTY_CURRENT_PROFIT = "Текущая прибыль"  # Основной показатель
-PROPERTY_CAPITALIZATION = "Капитализация, $"  # Пример: "Капитализация, $"
-PROPERTY_TURNOVER = "Оборот"  # Пример: "Оборот"
-PROPERTY_DEPOSIT_PCT = "Депозит, %"  # Пример: "Депозит, %"
-PROPERTY_AVG_RATE = "Средний курс"  # Пример: "Средний курс"
-PROPERTY_CURRENT_RATE = "Текущий курс"  # Пример: "Текущий курс"
-PROPERTY_INVESTED = "Оборотные, $"  # Пример: "Оборотные, $"
-PROPERTY_PROFIT_PCT = "Доходность, %"  # Пример: "Доходность, %"
-PROPERTY_CRYPTO_ACCOUNT = "Криптосчет"  # Пример: "Криптосчет" (relation)
-PROPERTY_ACTIVE = "Активных"  # Пример: "Активных" (rollup)
-PROPERTY_CLOSED_TURNOVER = "Оборот закрытых Rollup" # Пример: "Оборот закрытых Rollup" (rollup)
-PROPERTY_PROFITABLE_TRADES = "Прибыльные сделки Rollup" # Пример: "Прибыльные сделки Rollup" (rollup)
-PROPERTY_NET_PROFIT = "Чистая прибыль" # Пример: "Чистая прибыль" (formula)
-PROPERTY_DATE = "Date" # Пример: "Date" (date)
-PROPERTY_AVG_DURATION = "Ср. срок" # Пример: "Ср. срок" (formula)
-PROPERTY_COMMISSIONS = "Комиссии" # Пример: "Комиссии" (rollup)
-PROPERTY_PROFIT_LOSS = "Прибыль / Убыток" # Пример: "Прибыль / Убыток" (rollup)
-PROPERTY_OPEN_TURNOVER = "Оборот открытых Rollup" # Пример: "Оборот открытых Rollup" (rollup)
-PROPERTY_CURRENT_ROLLUP = "Текущая" # Пример: "Текущая" (rollup)
-PROPERTY_AVG_PROFIT_PCT = "Ср. доходность, %" # Пример: "Ср. доходность, %" (rollup)
-PROPERTY_AVG_DURATION_ROLLUP = "Ср. срок Rollup" # Пример: "Ср. срок Rollup" (rollup)
-PROPERTY_PROFIT_PLUS = "Cделки +" # Пример: "Cделки +" (formula)
-PROPERTY_FORMULA_PROFIT = "Формула прибыли" # Пример: "Формула прибыли" (formula)
-PROPERTY_NET_PROFIT_ROLLUP = "Чистая прибыль Rollup" # Пример: "Чистая прибыль Rollup" (rollup)
-PROPERTY_TURNOVER_MONTH = "Оборот, мон." # Пример: "Оборот, мон." (rollup)
+PROPERTY_CRYPTO_ACCOUNT = "Криптосчет"  # relation
+PROPERTY_CURRENT_PROFIT = "Текущая прибыль"  # formula
+PROPERTY_CAPITALIZATION = "Капитализация, $"  # rollup
+PROPERTY_DEPOSIT_PCT = "Депозит, %"  # formula
 # --- /ВАЖНО ---
 
 
@@ -102,189 +81,42 @@ def fetch_all_pages_from_database(query_filter=None):
 def parse_notion_pages(pages):
     """
     Парсит список страниц Notion и извлекает нужные свойства.
-    Возвращает список словарей с краткой информацией.
+    Возвращает список словарей с информацией.
     """
     parsed_data = []
     for page in pages:
         page_id = page.get("id")
         properties = page.get("properties", {})
 
-        # --- Парсинг свойств ---
-        # Пример для "Текущая прибыль", тип formula
+        # --- Парсинг нужных свойств ---
+        # Криптосчет (relation)
+        crypto_account_raw = properties.get(PROPERTY_CRYPTO_ACCOUNT, {})
+        crypto_account_relations = crypto_account_raw.get("relation", [])
+        crypto_account_value = crypto_account_relations[0].get("name", "N/A (Тип неизвестен)") if crypto_account_relations else "Нет связи"
+
+        # Текущая прибыль (formula)
         current_profit_raw = properties.get(PROPERTY_CURRENT_PROFIT, {})
         current_profit_formula_obj = current_profit_raw.get("formula", {})
         current_profit_value = current_profit_formula_obj.get("number", current_profit_formula_obj.get("string", current_profit_formula_obj.get("date", "N/A (Тип неизвестен)")))
 
-        # Пример для "Капитализация, $", тип rollup (предполагаем number)
+        # Капитализация, $ (rollup)
         capitalization_raw = properties.get(PROPERTY_CAPITALIZATION, {})
-        # Rollup может иметь разные типы вложенных значений. Упрощаем для number.
         capitalization_value = capitalization_raw.get("rollup", {}).get("number") \
             if capitalization_raw.get("type") == "rollup" \
             else "N/A (Тип неизвестен)"
 
-        # Пример для "Оборот", тип formula
-        turnover_raw = properties.get(PROPERTY_TURNOVER, {})
-        turnover_formula_obj = turnover_raw.get("formula", {})
-        turnover_value = turnover_formula_obj.get("number", turnover_formula_obj.get("string", turnover_formula_obj.get("date", "N/A (Тип неизвестен)")))
-
-        # Пример для "Депозит, %", тип formula
+        # Депозит, % (formula)
         deposit_pct_raw = properties.get(PROPERTY_DEPOSIT_PCT, {})
         deposit_pct_formula_obj = deposit_pct_raw.get("formula", {})
         deposit_pct_value = deposit_pct_formula_obj.get("number", deposit_pct_formula_obj.get("string", deposit_pct_formula_obj.get("date", "N/A (Тип неизвестен)")))
 
-        # Пример для "Средний курс", тип formula
-        avg_rate_raw = properties.get(PROPERTY_AVG_RATE, {})
-        avg_rate_formula_obj = avg_rate_raw.get("formula", {})
-        avg_rate_value = avg_rate_formula_obj.get("number", avg_rate_formula_obj.get("string", avg_rate_formula_obj.get("date", "N/A (Тип неизвестен)")))
-
-        # Пример для "Текущий курс", тип rollup
-        current_rate_raw = properties.get(PROPERTY_CURRENT_RATE, {})
-        current_rate_value = current_rate_raw.get("rollup", {}).get("number") \
-            if current_rate_raw.get("type") == "rollup" \
-            else "N/A (Тип неизвестен)"
-
-        # Пример для "Оборотные, $", тип formula
-        invested_raw = properties.get(PROPERTY_INVESTED, {})
-        invested_formula_obj = invested_raw.get("formula", {})
-        invested_value = invested_formula_obj.get("number", invested_formula_obj.get("string", invested_formula_obj.get("date", "N/A (Тип неизвестен)")))
-
-        # Пример для "Доходность, %", тип formula
-        profit_pct_raw = properties.get(PROPERTY_PROFIT_PCT, {})
-        profit_pct_formula_obj = profit_pct_raw.get("formula", {})
-        profit_pct_value = profit_pct_formula_obj.get("number", profit_pct_formula_obj.get("string", profit_pct_formula_obj.get("date", "N/A (Тип неизвестен)")))
-
-        # Пример для "Криптосчет", тип relation
-        crypto_account_raw = properties.get(PROPERTY_CRYPTO_ACCOUNT, {})
-        # Получаем список связанных страниц
-        crypto_account_relations = crypto_account_raw.get("relation", [])
-        # Берем имя первой связанной страницы, если список не пуст
-        crypto_account_value = crypto_account_relations[0].get("name", "N/A (Тип неизвестен)") if crypto_account_relations else "Нет связи"
-
-        # Пример для "Активных", тип rollup (предполагаем number)
-        active_raw = properties.get(PROPERTY_ACTIVE, {})
-        active_value = active_raw.get("rollup", {}).get("number") \
-            if active_raw.get("type") == "rollup" \
-            else "N/A (Тип неизвестен)"
-
-        # Пример для "Оборот закрытых Rollup", тип rollup
-        closed_turnover_raw = properties.get(PROPERTY_CLOSED_TURNOVER, {})
-        closed_turnover_value = closed_turnover_raw.get("rollup", {}).get("number") \
-            if closed_turnover_raw.get("type") == "rollup" \
-            else "N/A (Тип неизвестен)"
-
-        # Пример для "Прибыльные сделки Rollup", тип rollup
-        profitable_trades_raw = properties.get(PROPERTY_PROFITABLE_TRADES, {})
-        profitable_trades_value = profitable_trades_raw.get("rollup", {}).get("number") \
-            if profitable_trades_raw.get("type") == "rollup" \
-            else "N/A (Тип неизвестен)"
-
-        # Пример для "Чистая прибыль", тип formula
-        net_profit_raw = properties.get(PROPERTY_NET_PROFIT, {})
-        net_profit_formula_obj = net_profit_raw.get("formula", {})
-        net_profit_value = net_profit_formula_obj.get("number", net_profit_formula_obj.get("string", net_profit_formula_obj.get("date", "N/A (Тип неизвестен)")))
-
-        # Пример для "Date", тип date
-        date_raw = properties.get(PROPERTY_DATE, {})
-        date_obj = date_raw.get("date", {})
-        date_value = date_obj.get("start", "N/A") if date_obj else "N/A"
-
-        # Пример для "Ср. срок", тип formula
-        avg_duration_raw = properties.get(PROPERTY_AVG_DURATION, {})
-        avg_duration_formula_obj = avg_duration_raw.get("formula", {})
-        avg_duration_value = avg_duration_formula_obj.get("number", avg_duration_formula_obj.get("string", avg_duration_formula_obj.get("date", "N/A (Тип неизвестен)")))
-
-        # Пример для "Комиссии", тип rollup
-        commissions_raw = properties.get(PROPERTY_COMMISSIONS, {})
-        commissions_value = commissions_raw.get("rollup", {}).get("number") \
-            if commissions_raw.get("type") == "rollup" \
-            else "N/A (Тип неизвестен)"
-
-        # Пример для "Прибыль / Убыток", тип rollup
-        profit_loss_raw = properties.get(PROPERTY_PROFIT_LOSS, {})
-        profit_loss_value = profit_loss_raw.get("rollup", {}).get("number") \
-            if profit_loss_raw.get("type") == "rollup" \
-            else "N/A (Тип неизвестен)"
-
-        # Пример для "Оборот открытых Rollup", тип rollup
-        open_turnover_raw = properties.get(PROPERTY_OPEN_TURNOVER, {})
-        open_turnover_value = open_turnover_raw.get("rollup", {}).get("number") \
-            if open_turnover_raw.get("type") == "rollup" \
-            else "N/A (Тип неизвестен)"
-
-        # Пример для "Текущая", тип rollup
-        current_rollup_raw = properties.get(PROPERTY_CURRENT_ROLLUP, {})
-        current_rollup_value = current_rollup_raw.get("rollup", {}).get("number") \
-            if current_rollup_raw.get("type") == "rollup" \
-            else "N/A (Тип неизвестен)"
-
-        # Пример для "Ср. доходность, %", тип rollup
-        avg_profit_pct_raw = properties.get(PROPERTY_AVG_PROFIT_PCT, {})
-        avg_profit_pct_value = avg_profit_pct_raw.get("rollup", {}).get("number") \
-            if avg_profit_pct_raw.get("type") == "rollup" \
-            else "N/A (Тип неизвестен)"
-
-        # Пример для "Ср. срок Rollup", тип rollup
-        avg_duration_rollup_raw = properties.get(PROPERTY_AVG_DURATION_ROLLUP, {})
-        avg_duration_rollup_value = avg_duration_rollup_raw.get("rollup", {}).get("number") \
-            if avg_duration_rollup_raw.get("type") == "rollup" \
-            else "N/A (Тип неизвестен)"
-
-        # Пример для "Cделки +", тип formula
-        profit_plus_raw = properties.get(PROPERTY_PROFIT_PLUS, {})
-        profit_plus_formula_obj = profit_plus_raw.get("formula", {})
-        profit_plus_value = profit_plus_formula_obj.get("number", profit_plus_formula_obj.get("string", profit_plus_formula_obj.get("date", "N/A (Тип неизвестен)")))
-
-        # Пример для "Формула прибыли", тип formula
-        formula_profit_raw = properties.get(PROPERTY_FORMULA_PROFIT, {})
-        formula_profit_formula_obj = formula_profit_raw.get("formula", {})
-        formula_profit_value = formula_profit_formula_obj.get("number", formula_profit_formula_obj.get("string", formula_profit_formula_obj.get("date", "N/A (Тип неизвестен)")))
-
-        # Пример для "Чистая прибыль Rollup", тип rollup
-        net_profit_rollup_raw = properties.get(PROPERTY_NET_PROFIT_ROLLUP, {})
-        net_profit_rollup_value = net_profit_rollup_raw.get("rollup", {}).get("number") \
-            if net_profit_rollup_raw.get("type") == "rollup" \
-            else "N/A (Тип неизвестен)"
-
-        # Пример для "Оборот, мон.", тип rollup
-        turnover_month_raw = properties.get(PROPERTY_TURNOVER_MONTH, {})
-        turnover_month_value = turnover_month_raw.get("rollup", {}).get("number") \
-            if turnover_month_raw.get("type") == "rollup" \
-            else "N/A (Тип неизвестен)"
-
-        # Пример для "Название" (title)
-        name_raw = properties.get(PROPERTY_NAME, {})
-        name_array = name_raw.get("title", [])
-        name_value = name_array[0].get("text", {}).get("content", "Без названия") if name_array else "Без названия"
-
         # --- Формирование словаря ---
         item = {
             "id": page_id,
-            "name": name_value,
+            "crypto_account": crypto_account_value,
             "current_profit_raw": current_profit_value,
             "capitalization": capitalization_value,
-            "turnover": turnover_value,
             "deposit_pct": deposit_pct_value,
-            "avg_rate": avg_rate_value,
-            "current_rate": current_rate_value,
-            "invested": invested_value,
-            "profit_pct": profit_pct_value,
-            "crypto_account": crypto_account_value,
-            "active": active_value,
-            "closed_turnover": closed_turnover_value,
-            "profitable_trades": profitable_trades_value,
-            "net_profit": net_profit_value,
-            "date": date_value,
-            "avg_duration": avg_duration_value,
-            "commissions": commissions_value,
-            "profit_loss": profit_loss_value,
-            "open_turnover": open_turnover_value,
-            "current_rollup": current_rollup_value,
-            "avg_profit_pct": avg_profit_pct_value,
-            "avg_duration_rollup": avg_duration_rollup_value,
-            "profit_plus": profit_plus_value,
-            "formula_profit": formula_profit_value,
-            "net_profit_rollup": net_profit_rollup_value,
-            "turnover_month": turnover_month_value,
         }
         parsed_data.append(item)
 
@@ -292,68 +124,28 @@ def parse_notion_pages(pages):
     return parsed_data
 
 
-def analyze_crypto_data(data_list):
-    """
-    Анализирует список данных криптосчетов.
-    Возвращает отфильтрованный список и общую сумму прибыли/убытка.
-    """
-    # Фильтрация: исключаем нули, '0', '0.0', None, NaN и "N/A (Тип неизвестен)"
-    non_zero_items = []
-    total_profit = 0.0
-
-    for item in data_list:
-        raw_val = item.get("current_profit_raw")
-
-        # Проверяем на "N/A (Тип неизвестен)"
-        if raw_val == "N/A (Тип неизвестен)":
-            continue  # Пропускаем
-
-        # Пытаемся привести к float
-        try:
-            profit_float = float(raw_val)
-            # Проверяем на NaN
-            if math.isnan(profit_float):
-                continue  # Пропускаем
-            # Проверяем на 0
-            if profit_float == 0:
-                continue  # Пропускаем
-            # Если всё ок, добавляем в список и к сумме
-            non_zero_items.append(item)
-            total_profit += profit_float
-        except (ValueError, TypeError):
-            # Если привести к float не удалось, игнорируем (например, если там строка "abc")
-            logger.debug(f"Пропущено значение прибыли '{raw_val}' для счета '{item.get('name')}' - не число.")
-            continue
-
-    logger.info(f"Фильтрация завершена. Найдено {len(non_zero_items)} счетов с ненулевой прибылью/убытком.")
-    return non_zero_items, total_profit
+# Функция analyze_crypto_data больше не нужна без фильтрации
 
 
 def get_quick_report():
     """
-    Получает данные из Notion и возвращает краткий отчет о прибыли/убытке.
+    Получает данные из Notion и возвращает краткий отчет (только указанные колонки).
     """
-    logger.info("Запуск получения быстрого отчета...")
+    logger.info("Запуск получения быстрого отчета (только указанные колонки)...")
     pages = fetch_all_pages_from_database()
     if pages is None:
         return "❌ Ошибка при извлечении данных из Notion."
 
     parsed_data = parse_notion_pages(pages)
-    if not parsed_data:
+    if not parsed_
         return "⚠️ Данные в базе Notion отсутствуют или не удалось их обработать."
 
-    non_zero_items, total_profit = analyze_crypto_data(parsed_data)
-
-    if not non_zero_items:
-        return "📉 Нет криптосчетов с ненулевой прибылью/убытком для отчета."
-
     # Формируем строку результата
-    report_text = f"📈 Краткий отчет:\n"
-    report_text += f"Сумма текущей прибыли/убытка: {total_profit:.2f}\n"
-    # (Опционально) Добавить количество счетов
-    report_text += f"(В расчете участвовало {len(non_zero_items)} счетов)"
+    report_text = f"📈 Краткий отчет (Криптосчет - Прибыль - Капитализация - Депозит %):\n\n"
+    for item in parsed_data:
+        report_text += f"- {item['crypto_account']} - {item['current_profit_raw']} - {item['capitalization']} - {item['deposit_pct']}\n"
 
-    logger.info("Быстрый отчет сформирован.")
+    logger.info("Быстрый отчет (указанные колонки) сформирован.")
     return report_text
 
 
@@ -367,37 +159,15 @@ def get_wide_report():
         return "❌ Ошибка при извлечении данных из Notion."
 
     parsed_data = parse_notion_pages(pages)
-    if not parsed_data:
+    if not parsed_
         return "⚠️ Данные в базе Notion отсутствуют или не удалось их обработать."
 
     report_text = "📋 Подробный отчет о криптосчетах:\n\n"
     for item in parsed_data:  # Показываем ВСЕ счета
-        report_text += f"- Название: {item.get('name', 'N/A')}\n"
+        report_text += f"- Криптосчет: {item.get('crypto_account', 'N/A')}\n"
         report_text += f"  Прибыль/убыток: {item.get('current_profit_raw', 'N/A')}\n"
         report_text += f"  Капитализация: {item.get('capitalization', 'N/A')}\n"
-        report_text += f"  Оборот: {item.get('turnover', 'N/A')}\n"
         report_text += f"  Депозит %: {item.get('deposit_pct', 'N/A')}\n"
-        report_text += f"  Средний курс: {item.get('avg_rate', 'N/A')}\n"
-        report_text += f"  Текущий курс: {item.get('current_rate', 'N/A')}\n"
-        report_text += f"  Оборотные: {item.get('invested', 'N/A')}\n"
-        report_text += f"  Доходность %: {item.get('profit_pct', 'N/A')}\n"
-        report_text += f"  Криптосчет: {item.get('crypto_account', 'N/A')}\n"
-        report_text += f"  Активных: {item.get('active', 'N/A')}\n"
-        report_text += f"  Оборот закрытых: {item.get('closed_turnover', 'N/A')}\n"
-        report_text += f"  Прибыльных сделок: {item.get('profitable_trades', 'N/A')}\n"
-        report_text += f"  Чистая прибыль: {item.get('net_profit', 'N/A')}\n"
-        report_text += f"  Дата: {item.get('date', 'N/A')}\n"
-        report_text += f"  Ср. срок: {item.get('avg_duration', 'N/A')}\n"
-        report_text += f"  Комиссии: {item.get('commissions', 'N/A')}\n"
-        report_text += f"  Прибыль / Убыток: {item.get('profit_loss', 'N/A')}\n"
-        report_text += f"  Оборот открытых: {item.get('open_turnover', 'N/A')}\n"
-        report_text += f"  Текущая: {item.get('current_rollup', 'N/A')}\n"
-        report_text += f"  Ср. доходность %: {item.get('avg_profit_pct', 'N/A')}\n"
-        report_text += f"  Ср. срок Rollup: {item.get('avg_duration_rollup', 'N/A')}\n"
-        report_text += f"  Cделки +: {item.get('profit_plus', 'N/A')}\n"
-        report_text += f"  Формула прибыли: {item.get('formula_profit', 'N/A')}\n"
-        report_text += f"  Чистая прибыль Rollup: {item.get('net_profit_rollup', 'N/A')}\n"
-        report_text += f"  Оборот, мон.: {item.get('turnover_month', 'N/A')}\n"
         report_text += "---\n"
 
     logger.info("Широкий отчет сформирован.")
