@@ -4,7 +4,7 @@ import os
 import logging
 
 # --- Импорт функций из нового модуля ---
-from notion_client import check_notion_connection, get_quick_report, get_wide_report
+from notion_client import check_notion_connection
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -22,7 +22,7 @@ AUTHORIZED_USER_IDS = [
     'zV/BRbzyPWJHKFpMTLWkqw=='  # ЗАМЕНИТЕ на ваш реальный ID
 ]
 
-logger.info("🤖 Private Viber Bot with Notion Integration starting...")
+logger.info("🤖 Private Viber Bot with Notion Connection Check starting...")
 logger.info(f"🔐 Authorized users: {len(AUTHORIZED_USER_IDS)}")
 logger.info(f"📊 Notion DB ID: {NOTION_DATABASE_ID[-8:] if NOTION_DATABASE_ID else 'Not set'}...")
 
@@ -86,7 +86,7 @@ def get_main_menu_keyboard():
 
 def get_crypto_menu_keyboard():
     """Создает клавиатуру для подменю Крипто."""
-    # Добавлена кнопка 'wide_report'
+    # Убрана кнопка 'wide_report'
     return {
         "Type": "keyboard",
         "DefaultHeight": True,
@@ -95,11 +95,6 @@ def get_crypto_menu_keyboard():
                 "ActionType": "reply",
                 "ActionBody": "quick_report",
                 "Text": "📉 Быстрый отчет"
-            },
-            {
-                "ActionType": "reply",
-                "ActionBody": "wide_report",
-                "Text": "📊 Широкий отчет"
             },
             {
                 "ActionType": "reply",
@@ -120,7 +115,7 @@ def webhook():
     if request.method == 'POST':
         try:
             data = request.get_json()
-            logger.info(f"Full webhook data: {data}")
+            logger.info(f"Full webhook  {data}")
             user_id = None
             message_text = None
             sender_name = data.get('sender', {}).get('name', 'Unknown')
@@ -182,17 +177,11 @@ def webhook():
                     logger.info("Handling 'back_to_main' action.")
                     send_message_with_keyboard(user_id, "Возврат в главное меню.", get_main_menu_keyboard())
                 elif action_body == "quick_report":
-                    logger.info("Handling 'quick_report' action. Fetching and analyzing data from Notion...")
-                    # Вызываем функцию получения быстрого отчета из notion_client
-                    report_message = get_quick_report()
-                    # Отправляем пользователю результат
-                    send_message_with_keyboard(user_id, report_message, get_crypto_menu_keyboard())  # Возвращаем к подменю после отчета
-                elif action_body == "wide_report":
-                    logger.info("Handling 'wide_report' action. Fetching and analyzing data from Notion...")
-                    # Вызываем функцию получения широкого отчета из notion_client
-                    report_message = get_wide_report()
-                    # Отправляем пользователю результат
-                    send_message_with_keyboard(user_id, report_message, get_crypto_menu_keyboard())  # Возвращаем к подменю после отчета
+                    logger.info("Handling 'quick_report' action. Checking Notion connection...")
+                    # Вызываем функцию проверки подключения из notion_client
+                    success, message = check_notion_connection()
+                    # Отправляем пользователю результат проверки
+                    send_message_with_keyboard(user_id, message, get_crypto_menu_keyboard()) # Возвращаем к подменю после проверки
                 else:
                     logger.info(f"Unknown action body: {action_body}")
                     # Возможно, это текстовое сообщение, не связанное с меню
