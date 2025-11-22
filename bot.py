@@ -15,7 +15,6 @@ VIBER_TOKEN = os.environ.get('VIBER_TOKEN')
 NOTION_TOKEN = os.environ.get('NOTION_TOKEN') # Токен интеграции
 NOTION_DATABASE_ID = os.environ.get('NOTION_DATABASE_ID') # ID базы данных
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY') # API ключ для support.by
-# --- ИЗМЕНЕНО: URL API support.by ---
 OPENAI_API_URL = "https://global.support.by/api/openai/v1/chat/completions" # URL эндпоинта support.by
 PORT = os.environ.get('PORT', 5000)
 
@@ -27,7 +26,6 @@ AUTHORIZED_USER_IDS = [
 logger.info("🤖 Private Viber Bot with Notion Integration (via AI) starting...")
 logger.info(f"🔐 Authorized users: {len(AUTHORIZED_USER_IDS)}")
 logger.info(f"📊 Notion DB ID: {NOTION_DATABASE_ID[-8:] if NOTION_DATABASE_ID else 'Not set'}...")
-# --- ИЗМЕНЕНО: Сообщение об API ---
 logger.info(f"🧠 Using AI API: {OPENAI_API_URL} (Model: deepseek-reasoner)")
 
 def is_authorized_user(user_id):
@@ -94,10 +92,9 @@ def get_raw_crypto_data_from_notion_http():
             # --- ИСПРАВЛЕНО: Извлечение значения из 'Текущая' (Тип: rollup, ID: Jl%7D%5D) ---
             текущая_prop = props.get("Текущая", {})
             # Для rollup типа number, строка или date, извлекаем соответствующее значение
-            # Попробуем получить 'number' или 'string' или 'date' или оставить как есть
             # Обычно rollup number возвращает словарь с ключом 'number'
-            текущая_rollup_obj = текущая_prop.get("number", текущая_prop.get("string", текущая_prop.get("date", "N/A")))
             # Если current_prop сам по себе словарь с ключом 'number', 'string', 'date', нужно проверить это
+            текущая_rollup_obj = "N/A" # Значение по умолчанию
             if isinstance(текущая_prop, dict):
                 # Проверим структуру ответа для rollup
                 # Пример структуры для rollup number: {"type": "number", "number": 123.45}
@@ -113,7 +110,7 @@ def get_raw_crypto_data_from_notion_http():
                     текущая_rollup_obj = date_obj.get("start", "N/A") if date_obj else "N/A"
                 else:
                     # Если тип не number/string/date, или структура другая
-                    текущая_rollup_obj = "N/A"
+                    текущая_rollup_obj = "N/A (Тип неизвестен)"
             else:
                 # Если текущая_prop не словарь, значит он сам является значением (редкий случай)
                 текущая_rollup_obj = текущая_prop
@@ -256,8 +253,9 @@ def send_data_to_ai_api(raw_data):
 
     # Формируем сообщение для ИИ
     # Промпт: Опишите, что ИИ должен сделать с raw_data
-    # --- ИЗМЕНЕНО: Добавлена роль 'developer' и изменена модель ---
+    # --- ИЗМЕНЕНО: Убрана роль 'developer', добавлена инструкция в сообщение 'user' ---
     user_message_content = (
+        "You are a helpful assistant.\n\n"
         "Проанализируй следующие данные криптосчетов. "
         "Отфильтруй те, у которых 'current_profit_raw' равен 0, 0.0, '0', '0.0', None или NaN. "
         "Для оставшихся счетов выведи название ('name') и значение 'current_profit_raw'. "
@@ -267,15 +265,10 @@ def send_data_to_ai_api(raw_data):
     )
 
     payload = {
-        "model": "deepseek-reasoner", # --- ИЗМЕНЕНО: Указана модель deepseek-reasoner ---
+        "model": "deepseek-reasoner", # Указана модель deepseek-reasoner
         "messages": [
-            # --- ИЗМЕНЕНО: Добавлена роль 'developer' ---
             {
-                "role": "developer",
-                "content": "You are a helpful assistant."
-            },
-            {
-                "role": "user",
+                "role": "user", # --- ИЗМЕНЕНО: Используем только 'user' ---
                 "content": user_message_content
             }
         ],
