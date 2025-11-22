@@ -86,19 +86,21 @@ def get_crypto_data_from_notion_http():
             # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
             open_turnover_rollup_value = 'Тип неизвестен (Rollup)'
 
+            # --- ИСПРАВЛЕНО: Используем "Текущая" вместо "Текущая прибыль formula" ---
             # Свойство: 'Текущая' (Тип: rollup, ID: Jl%7D%5D)
+            current_rollup_prop = props.get("Текущая", {}) # <-- Используем правильное имя
             # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
-            current_rollup_value = 'Тип неизвестен (Rollup)'
+            # Предполагаем, что возвращается число или строка
+            current_profit_value = current_rollup_prop.get("number", current_rollup_prop.get("string", "N/A")) # <-- Извлекаем number или string
 
             # Свойство: 'Капитализация, $' (Тип: rollup, ID: Js%7CC)
             # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
             capitalization_usd_value = 'Тип неизвестен (Rollup)'
 
-            # --- ИСПРАВЛЕНО: Используем "Текущая прибыль formula" вместо "Текущая прибыль" ---
-            # Свойство: 'Текущая прибыль formula' (Тип: formula, ID: Zp%5Bd)
-            current_profit_formula_prop = props.get("Текущая прибыль formula", {}) # <-- Используем правильное имя
-            current_profit_formula_obj = current_profit_formula_prop.get("formula", {}) # <-- Для formula получаем объект formula
-            current_profit_value = current_profit_formula_obj.get("number", current_profit_formula_obj.get("string", current_profit_formula_obj.get("date", "N/A")))
+            # Свойство: 'Текущая прибыль' (Тип: formula, ID: Zp%5Bd)
+            current_profit_formula_prop = props.get("Текущая прибыль", {})
+            current_profit_formula_obj = current_profit_formula_prop.get("formula", {})
+            current_profit_formula_value = current_profit_formula_obj.get("number", current_profit_formula_obj.get("string", current_profit_formula_obj.get("date", "N/A")))
 
             # Свойство: 'Cделки +' (Тип: formula, ID: %5Be%3E%3C)
             deals_plus_prop = props.get("Cделки +", {})
@@ -191,7 +193,7 @@ def get_crypto_data_from_notion_http():
             parsed_data.append({
                 "page_id": page_id,
                 "name": name_value, # Используем значение заголовка (или "N/A (Без имени)")
-                "current_profit": current_profit_value, # Теперь из 'Текущая прибыль formula' (может быть числом, строкой или None)
+                "current_profit": current_profit_value, # Теперь из 'Текущая' (может быть числом, строкой или N/A)
                 "capitalization": capitalization_usd_value, # Rollup - строка
                 "turnover": turnover_value, # Formula - может быть числом или строкой
                 "deposit_pct": deposit_pct_value, # Formula - может быть числом или строкой
@@ -454,7 +456,7 @@ def webhook():
                      if message_text: # Проверяем, было ли это текстовое сообщение
                          logger.info(f"Received unknown action body, treating as text command: {message_text}")
                          # Можно добавить обработку старых команд или игнорировать
-                         send_message_with_keyboard(user_id, f"🤔 Неизвестная команда: {message_text}", get_main_menu_keyboard()) # <-- Исправлено: добавлена кавычка
+                         send_message_with_keyboard(user_id, f"🤔 Неизвестная команда: {message_text}", get_main_menu_keyboard())
 
             logger.info("--- Webhook processing finished ---")
             return jsonify({"status": 0})
