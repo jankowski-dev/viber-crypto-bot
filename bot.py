@@ -14,6 +14,8 @@ app = Flask(__name__)
 VIBER_TOKEN = os.environ.get('VIBER_TOKEN')
 NOTION_TOKEN = os.environ.get('NOTION_TOKEN') # Токен интеграции
 NOTION_DATABASE_ID = os.environ.get('NOTION_DATABASE_ID') # ID базы данных
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY') # API ключ OpenAI
+OPENAI_API_URL = "https://api.openai.com/v1/chat/completions" # URL эндпоинта OpenAI
 PORT = os.environ.get('PORT', 5000)
 
 # Ваши авторизованные ID пользователей
@@ -21,9 +23,10 @@ AUTHORIZED_USER_IDS = [
     'zV/BRbzyPWJHKFpMTLWkqw=='  # ЗАМЕНИТЕ на ваш реальный ID
 ]
 
-logger.info("🤖 Private Viber Bot with Notion Integration (HTTP API) starting...")
+logger.info("🤖 Private Viber Bot with Notion Integration (via AI) starting...")
 logger.info(f"🔐 Authorized users: {len(AUTHORIZED_USER_IDS)}")
 logger.info(f"📊 Notion DB ID: {NOTION_DATABASE_ID[-8:] if NOTION_DATABASE_ID else 'Not set'}...")
+logger.info(f"🧠 Using OpenAI API: {OPENAI_API_URL}")
 
 def is_authorized_user(user_id):
     """Проверяет, авторизован ли пользователь"""
@@ -31,8 +34,8 @@ def is_authorized_user(user_id):
     logger.debug(f"Authorization check for {user_id}: {auth_result}")
     return auth_result
 
-def get_crypto_data_from_notion_http():
-    """Извлекает данные из Notion DB с помощью HTTP API. Возвращает список словарей."""
+def get_raw_crypto_data_from_notion_http():
+    """Извлекает *сырые* данные из Notion DB с помощью HTTP API. Возвращает список словарей."""
     if not NOTION_TOKEN or not NOTION_DATABASE_ID:
         logger.error("Notion credentials (NOTION_TOKEN or NOTION_DATABASE_ID) not set.")
         return None, "Ошибка: Не заданы учетные данные для Notion."
@@ -60,7 +63,7 @@ def get_crypto_data_from_notion_http():
             page_id = page["id"] # ID страницы (строки), может понадобиться позже
             props = page.get("properties", {})
 
-            # --- Извлечение свойств с использованием точных имен из notion_properties_mapping.txt ---
+            # --- Извлечение *всех* нужных свойств из notion_properties_mapping.txt ---
             # Свойство: 'Прибыльные сделки Rollup' (Тип: rollup, ID: %3A%3A%5BW)
             # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
             profit_making_trades_rollup_value = 'Тип неизвестен (Rollup)'
@@ -86,21 +89,42 @@ def get_crypto_data_from_notion_http():
             # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
             open_turnover_rollup_value = 'Тип неизвестен (Rollup)'
 
-            # --- ИСПРАВЛЕНО: Используем "Текущая" вместо "Текущая прибыль formula" ---
-            # Свойство: 'Текущая' (Тип: rollup, ID: Jl%7D%5D)
-            current_rollup_prop = props.get("Текущая", {}) # <-- Используем правильное имя
-            # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
-            # Предполагаем, что возвращается число или строка
-            current_profit_value = current_rollup_prop.get("number", current_rollup_prop.get("string", "N/A")) # <-- Извлекаем number или string
+            # --- ИСПРАВЛЕНО: Извлечение значения из 'Текущая' (Тип: rollup, ID: Jl%7D%5D) ---
+            текущая_prop = props.get("Текущая", {})
+            # Для rollup типа number, строка или date, извлекаем соответствующее значение
+            # Попробуем получить 'number' или 'string' или 'date' или оставить как есть
+            # Обычно rollup number возвращает словарь с ключом 'number'
+            текущая_rollup_obj = текущая_prop.get("number", текущая_prop.get("string", текущая_prop.get("date", "N/A")))
+            # Если current_prop сам по себе словарь с ключом 'number', 'string', 'date', нужно проверить это
+            if isinstance(текущая_prop, dict):
+                # Проверим структуру ответа для rollup
+                # Пример структуры для rollup number: {"type": "number", "number": 123.45}
+                # Пример структуры для rollup string: {"type": "string", "string": "some text"}
+                rollup_type = текущая_prop.get("type")
+                if rollup_type == "number":
+                    текущая_rollup_obj = текущая_prop.get("number", "N/A")
+                elif rollup_type == "string":
+                    текущая_rollup_obj = текущая_prop.get("string", "N/A")
+                elif rollup_type == "date":
+                    # Извлекаем start или end из объекта даты
+                    date_obj = текущая_prop.get("date", {})
+                    текущая_rollup_obj = date_obj.get("start", "N/A") if date_obj else "N/A"
+                else:
+                    # Если тип не number/string/date, или структура другая
+                    текущая_rollup_obj = "N/A"
+            else:
+                # Если текущая_prop не словарь, значит он сам является значением (редкий случай)
+                текущая_rollup_obj = текущая_prop
+
 
             # Свойство: 'Капитализация, $' (Тип: rollup, ID: Js%7CC)
             # Тип 'rollup' неизвестен. Проверьте документацию Notion API.
             capitalization_usd_value = 'Тип неизвестен (Rollup)'
 
             # Свойство: 'Текущая прибыль' (Тип: formula, ID: Zp%5Bd)
-            current_profit_formula_prop = props.get("Текущая прибыль", {})
-            current_profit_formula_obj = current_profit_formula_prop.get("formula", {})
-            current_profit_formula_value = current_profit_formula_obj.get("number", current_profit_formula_obj.get("string", current_profit_formula_obj.get("date", "N/A")))
+            текущая_прибыль_prop = props.get("Текущая прибыль", {})
+            текущая_прибыль_formula_obj = текущая_прибыль_prop.get("formula", {})
+            текущая_прибыль_value = текущая_прибыль_formula_obj.get("number", текущая_прибыль_formula_obj.get("string", текущая_прибыль_formula_obj.get("date", "N/A")))
 
             # Свойство: 'Cделки +' (Тип: formula, ID: %5Be%3E%3C)
             deals_plus_prop = props.get("Cделки +", {})
@@ -187,13 +211,12 @@ def get_crypto_data_from_notion_http():
             name_value = name_title_array[0].get("text", {}).get("content", "N/A (Без имени)") if name_title_array else "N/A (Без имени)"
 
 
-            # --- Сбор данных в словарь ---
-            # Здесь вы можете выбрать, какие именно свойства использовать в отчетах.
-            # Я выбрал несколько, соответствующие вашим требованиям.
+            # --- Сбор *всех* данных в словарь ---
+            # Эти данные будут отправлены ИИ для анализа
             parsed_data.append({
                 "page_id": page_id,
                 "name": name_value, # Используем значение заголовка (или "N/A (Без имени)")
-                "current_profit": current_profit_value, # Теперь из 'Текущая' (может быть числом, строкой или N/A)
+                "current_profit_raw": текущая_rollup_obj, # <-- Используем значение из 'Текущая' (число, строка, N/A)
                 "capitalization": capitalization_usd_value, # Rollup - строка
                 "turnover": turnover_value, # Formula - может быть числом или строкой
                 "deposit_pct": deposit_pct_value, # Formula - может быть числом или строкой
@@ -203,7 +226,7 @@ def get_crypto_data_from_notion_http():
                 # "other_prop": other_value,
             })
 
-        logger.info(f"Parsed data successfully: {len(parsed_data)} items.")
+        logger.info(f"Raw data parsed successfully: {len(parsed_data)} items.")
         return parsed_data, None
 
     except requests.exceptions.HTTPError as http_err:
@@ -218,85 +241,60 @@ def get_crypto_data_from_notion_http():
         return None, f"Неизвестная ошибка при обработке данных Notion: {e}"
 
 
-def format_quick_report(data):
-    """Формирует строку быстрого отчета, исключая записи с нулевой прибылью/убытком."""
-    if not data: # <-- Исправлено: добавлена переменная 'data'
-        logger.info("No data received for quick report.")
-        return "❌ Не удалось получить данные для отчета."
+def send_data_to_ai_api(raw_data):
+    """Отправляет *сырые* данные в ИИ API и возвращает сформированный отчет."""
+    if not OPENAI_API_KEY:
+        logger.error("OPENAI_API_KEY not set.")
+        return "❌ Ошибка: Не задан API-ключ для ИИ."
 
-    logger.info(f"Starting quick report formatting with {len(data)} items.")
-    # Фильтрация данных: оставляем только те, у которых current_profit не является 0, 0.0, "0", "0.0", None или NaN.
-    filtered_items = []
-    for item in data: # <-- Исправлено: добавлена переменная 'data'
-        raw_profit = item.get('current_profit', 0)
-        logger.debug(f"Processing item: {item.get('name', 'N/A')}, raw_profit: {raw_profit}, type: {type(raw_profit)}")
-        
-        profit_numeric = None
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
 
-        # Проверяем тип и значение raw_profit
-        if raw_profit is None:
-            logger.debug(f"  raw_profit is None -> profit_numeric = 0")
-            profit_numeric = 0
-        elif isinstance(raw_profit, (int, float)):
-            # Число проверяем на NaN (NaN != NaN всегда True)
-            if raw_profit != raw_profit: # Это проверка на NaN
-                 logger.debug(f"  raw_profit is NaN -> profit_numeric = 0")
-                 profit_numeric = 0
-            else:
-                logger.debug(f"  raw_profit is a number -> profit_numeric = {raw_profit}")
-                profit_numeric = raw_profit
-        elif isinstance(raw_profit, str):
-            # Пытаемся преобразовать строку в число
-            try:
-                float_val = float(raw_profit)
-                # Проверяем, не NaN ли это
-                if float_val != float_val: # Это проверка на NaN
-                     logger.debug(f"  raw_profit string '{raw_profit}' converts to NaN -> profit_numeric = 0")
-                     profit_numeric = 0
-                else:
-                     logger.debug(f"  raw_profit string '{raw_profit}' converts to number -> profit_numeric = {float_val}")
-                     profit_numeric = float_val
-            except ValueError:
-                # Если строку нельзя преобразовать, считаем её нулевой
-                logger.debug(f"  raw_profit string '{raw_profit}' cannot be converted to number -> profit_numeric = 0")
-                profit_numeric = 0
-        else:
-            # Для любых других типов считаем прибыль нулевой
-            logger.debug(f"  raw_profit is of unknown type {type(raw_profit)} -> profit_numeric = 0")
-            profit_numeric = 0
+    # Формируем сообщение для ИИ
+    # Промпт: Опишите, что ИИ должен сделать с raw_data
+    user_message_content = (
+        "Проанализируй следующие данные криптосчетов. "
+        "Отфильтруй те, у которых 'current_profit_raw' равен 0, 0.0, '0', '0.0', None или NaN. "
+        "Для оставшихся счетов выведи название ('name') и значение 'current_profit_raw'. "
+        "Также посчитай общую сумму прибыли/убытка по оставшимся счетам. "
+        "Форматируй ответ как список криптосчетов с их прибылью/убытком и итоговую сумму в конце.\n\n"
+        f"Данные: {json.dumps(raw_data, ensure_ascii=False, indent=2)}"
+    )
 
-        # Добавляем в отфильтрованный список, только если значение не ноль
-        if profit_numeric != 0:
-            logger.debug(f"  Keeping item {item.get('name', 'N/A')}, profit_numeric = {profit_numeric}")
-            # Заменяем оригинальное значение на числовое для последующих операций
-            item_for_report = item.copy() # Копируем, чтобы не менять оригинал
-            item_for_report['current_profit_numeric'] = profit_numeric
-            filtered_items.append(item_for_report)
-        else:
-            logger.debug(f"  Filtering out item {item.get('name', 'N/A')}, profit_numeric = {profit_numeric}")
+    payload = {
+        "model": "gpt-3.5-turbo", # Укажите модель, которую вы хотите использовать
+        "messages": [
+            {
+                "role": "user",
+                "content": user_message_content
+            }
+        ],
+        "temperature": 0.1 # Низкая температура для более детерминированного результата
+    }
 
+    try:
+        logger.info("Sending data to AI API...")
+        response = requests.post(OPENAI_API_URL, headers=headers, json=payload, timeout=30) # Увеличим таймаут
+        response.raise_for_status()
 
-    if not filtered_items: # <-- Исправлено: добавлена переменная 'filtered_items'
-        logger.info("No non-zero profit items found after filtering.")
-        return "📉 Нет криптосчетов с ненулевой прибылью/убытком для отчета."
+        ai_response = response.json()
+        # Извлекаем сгенерированный текст из ответа
+        report_text = ai_response.get('choices', [{}])[0].get('message', {}).get('content', '❌ Не удалось сгенерировать отчет.')
+        logger.info("Report received from AI API.")
+        return report_text
 
-    logger.info(f"Found {len(filtered_items)} non-zero profit items.")
-    report_lines = ["📈 Быстрый отчет по криптосчетам:\n"]
-    total_profit = 0
-    for item in filtered_items: # <-- Исправлено: добавлена переменная 'filtered_items'
-        profit_numeric = item.get('current_profit_numeric', 0)
-        # Суммируем числовое значение (даже если оно отрицательное)
-        total_profit += profit_numeric
-        # Форматируем для отображения
-        formatted_profit = f"{profit_numeric:.2f}"
-
-        # Выводим название криптосчета
-        report_lines.append(f"- {item.get('name', 'N/A')}: {formatted_profit}")
-
-    # Форматируем итоговую сумму
-    formatted_total_profit = f"{total_profit:.2f}"
-    report_lines.append(f"\n💰 Сумма текущей прибыли/убытка: {formatted_total_profit}")
-    return "\n".join(report_lines)
+    except requests.exceptions.HTTPError as http_err:
+        logger.error(f"HTTP error occurred while calling AI API: {http_err}")
+        logger.error(f"Response content: {response.text}")
+        return f"❌ Ошибка HTTP при запросе к ИИ: {http_err}"
+    except requests.exceptions.RequestException as req_err:
+        logger.error(f"Request error occurred while calling AI API: {req_err}")
+        return f"❌ Ошибка запроса к ИИ: {req_err}"
+    except Exception as e:
+        logger.error(f"Unexpected error calling AI API: {e}")
+        return f"❌ Неизвестная ошибка при запросе к ИИ: {e}"
 
 
 def send_message_with_keyboard(user_id, text, keyboard=None):
@@ -442,13 +440,20 @@ def webhook():
                      send_message_with_keyboard(user_id, "Возврат в главное меню.", get_main_menu_keyboard())
                  elif action_body == "quick_report":
                      logger.info("Handling 'quick_report' action.")
-                     crypto_data, error = get_crypto_data_from_notion_http()
+                     # Шаг 1: Получить *сырые* данные из Notion
+                     raw_data, error = get_raw_crypto_data_from_notion_http()
                      if error:
-                         logger.error(f"Error fetching data for quick report: {error}")
+                         logger.error(f"Error fetching raw data for quick report: {error}")
                          send_message_with_keyboard(user_id, error)
                      else:
-                         report = format_quick_report(crypto_data)
-                         send_message_with_keyboard(user_id, report, get_crypto_menu_keyboard()) # Возвращаем к подменю после отчета
+                         # Шаг 2: Отправить *сырые* данные в ИИ API
+                         ai_report = send_data_to_ai_api(raw_data)
+                         if ai_report.startswith("❌"):
+                             logger.error(f"Error from AI API: {ai_report}")
+                             send_message_with_keyboard(user_id, ai_report)
+                         else:
+                             # Шаг 3: Отправить сгенерированный ИИ отчет пользователю
+                             send_message_with_keyboard(user_id, ai_report, get_crypto_menu_keyboard()) # Возвращаем к подменю после отчета
                  # Удалена обработка 'wide_report'
                  else:
                      logger.info(f"Unknown action body: {action_body}")
