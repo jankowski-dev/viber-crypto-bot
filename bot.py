@@ -454,7 +454,7 @@ def webhook():
                      if message_text: # Проверяем, было ли это текстовое сообщение
                          logger.info(f"Received unknown action body, treating as text command: {message_text}")
                          # Можно добавить обработку старых команд или игнорировать
-                         send_message_with_keyboard(user_id, f"🤔 Неизвестная команда: {message_text}, get_main_menu_keyboard())
+                         send_message_with_keyboard(user_id, f"🤔 Неизвестная команда: {message_text}", get_main_menu_keyboard()) # <-- Исправлено: добавлена кавычка
 
             logger.info("--- Webhook processing finished ---")
             return jsonify({"status": 0})
