@@ -1,3 +1,44 @@
+from flask import Flask, request, jsonify
+import requests
+import os
+import logging
+import json
+import time # Для обработки дубликатов вебхуков
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+app = Flask(__name__)
+
+# --- Настройки ---
+VIBER_TOKEN = os.environ.get('VIBER_TOKEN')
+NOTION_TOKEN = os.environ.get('NOTION_TOKEN') # Токен интеграции
+NOTION_DATABASE_ID = os.environ.get('NOTION_DATABASE_ID') # ID базы данных
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY') # API ключ для support.by
+OPENAI_API_URL = "https://global.support.by/api/openai/v1/chat/completions" # URL эндпоинта support.by
+PORT = os.environ.get('PORT', 5000)
+
+# Ваши авторизованные ID пользователей
+AUTHORIZED_USER_IDS = [
+    'zV/BRbzyPWJHKFpMTLWkqw=='  # ЗАМЕНИТЕ на ваш реальный ID
+]
+
+# --- Для обработки дубликатов вебхуков ---
+processed_tokens = {}
+TOKEN_EXPIRY_SECONDS = 60
+
+logger.info("🤖 Private Viber Bot with Notion Integration (via AI) starting...")
+logger.info(f"🔐 Authorized users: {len(AUTHORIZED_USER_IDS)}")
+logger.info(f"📊 Notion DB ID: {NOTION_DATABASE_ID[-8:] if NOTION_DATABASE_ID else 'Not set'}...")
+logger.info(f"🧠 Using AI API: {OPENAI_API_URL} (Model: deepseek-chat)")
+
+def is_authorized_user(user_id):
+    """Проверяет, авторизован ли пользователь"""
+    auth_result = user_id in AUTHORIZED_USER_IDS
+    logger.debug(f"Authorization check for {user_id}: {auth_result}")
+    return auth_result
+
 def get_raw_crypto_data_from_notion_http():
     """Извлекает *сырые* данные из Notion DB с помощью HTTP API. Возвращает список словарей."""
     if not NOTION_TOKEN or not NOTION_DATABASE_ID:
@@ -221,3 +262,268 @@ def get_raw_crypto_data_from_notion_http():
     except Exception as e:
         logger.error(f"Unexpected error parsing Notion  {e}")
         return None, f"Неизвестная ошибка при обработке данных Notion: {e}"
+
+
+def send_data_to_ai_api(raw_data):
+    """Отправляет *сырые* данные в ИИ API и возвращает сформированный отчет."""
+    if not OPENAI_API_KEY:
+        logger.error("OPENAI_API_KEY not set.")
+        return "❌ Ошибка: Не задан API-ключ для ИИ."
+
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    # Формируем сообщение для ИИ
+    # Промпт: Опишите, что ИИ должен сделать с raw_data
+    # --- ИЗМЕНЕНО: Убрана роль 'developer', добавлена инструкция в сообщение 'user', модель 'deepseek-chat' ---
+    user_message_content = (
+        "You are a helpful assistant.\n\n"
+        "Проанализируй следующие данные криптосчетов. "
+        "Отфильтруй те, у которых 'current_profit_raw' равен 0, 0.0, '0', '0.0', None или NaN. "
+        "Для оставшихся счетов выведи название ('name') и значение 'current_profit_raw'. "
+        "Также посчитай общую сумму прибыли/убытка по оставшимся счетам. "
+        "Форматируй ответ как список криптосчетов с их прибылью/убытком и итоговую сумму в конце.\n\n"
+        f"Данные: {json.dumps(raw_data, ensure_ascii=False, indent=2)}"
+    )
+
+    payload = {
+        "model": "deepseek-chat", # --- ИЗМЕНЕНО: Указана модель deepseek-chat ---
+        "messages": [
+            {
+                "role": "user", # --- ИЗМЕНЕНО: Используем только 'user' ---
+                "content": user_message_content
+            }
+        ],
+        "temperature": 0.1 # Низкая температура для более детерминированного результата
+    }
+
+    try:
+        logger.info("Sending data to AI API...")
+        # --- ИЗМЕНЕНО: Увеличен таймаут до 60 секунд ---
+        response = requests.post(OPENAI_API_URL, headers=headers, json=payload, timeout=60) 
+        response.raise_for_status()
+
+        ai_response = response.json()
+        # Извлекаем сгенерированный текст из ответа
+        report_text = ai_response.get('choices', [{}])[0].get('message', {}).get('content', '❌ Не удалось сгенерировать отчет.')
+        logger.info("Report received from AI API.")
+        return report_text
+
+    except requests.exceptions.HTTPError as http_err:
+        logger.error(f"HTTP error occurred while calling AI API: {http_err}")
+        logger.error(f"Response content: {response.text}")
+        return f"❌ Ошибка HTTP при запросе к ИИ: {http_err}"
+    except requests.exceptions.RequestException as req_err:
+        logger.error(f"Request error occurred while calling AI API: {req_err}")
+        # --- ИЗМЕНЕНО: Уточнение типа ошибки ---
+        if isinstance(req_err, requests.exceptions.ReadTimeout):
+            logger.error("AI API request timed out.")
+            return f"❌ Таймаут запроса к ИИ: сервер не ответил за 60 секунд."
+        return f"❌ Ошибка запроса к ИИ: {req_err}"
+    except Exception as e:
+        logger.error(f"Unexpected error calling AI API: {e}")
+        return f"❌ Неизвестная ошибка при запросе к ИИ: {e}"
+
+
+def send_message_with_keyboard(user_id, text, keyboard=None):
+    """Отправляет сообщение с опциональной клавиатурой (меню)."""
+    if not VIBER_TOKEN:
+        logger.error("VIBER_TOKEN not set.")
+        return
+
+    try:
+        url = 'https://chatapi.viber.com/pa/send_message'
+        headers = {
+            'X-Viber-Auth-Token': VIBER_TOKEN,
+            'Content-Type': 'application/json'
+        }
+
+        payload = {
+            'receiver': user_id,
+            'type': 'text',
+            'text': text
+        }
+        if keyboard:
+            payload['keyboard'] = keyboard
+            logger.info(f"Sending message with keyboard to {user_id[:8]}...")
+
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        if response.status_code == 200:
+            logger.info(f"📤 Sent to {user_id[:8]}...: {text[:50]}...")
+        else:
+            logger.error(f"❌ Send failed with status {response.status_code}: {response.text}")
+    except Exception as e:
+        logger.error(f"❌ Send error: {e}")
+
+def get_main_menu_keyboard():
+    """Создает клавиатуру для главного меню."""
+    return {
+        "Type": "keyboard",
+        "DefaultHeight": True,
+        "Buttons": [
+            {
+                "ActionType": "reply",
+                "ActionBody": "crypto_menu",
+                "Text": "🪙 Крипто"
+            },
+            {
+                "ActionType": "reply",
+                "ActionBody": "help_info",
+                "Text": "❓ Помощь"
+            }
+        ]
+    }
+
+def get_crypto_menu_keyboard():
+    """Создает клавиатуру для подменю Крипто."""
+    # Удалена кнопка 'wide_report'
+    return {
+        "Type": "keyboard",
+        "DefaultHeight": True,
+        "Buttons": [
+            {
+                "ActionType": "reply",
+                "ActionBody": "quick_report",
+                "Text": "📉 Быстрый отчет"
+            },
+            {
+                "ActionType": "reply",
+                "ActionBody": "back_to_main",
+                "Text": "🔙 Назад"
+            }
+        ]
+    }
+
+@app.route('/webhook', methods=['GET', 'POST', 'HEAD'])
+def webhook():
+    logger.info("--- Webhook received ---")
+    if request.method == 'GET':
+        logger.info("Received GET request.")
+        return jsonify({"status": "ok"})
+
+    if request.method == 'POST':
+        try:
+            data = request.get_json()
+            logger.info(f"Full webhook  {data}")
+
+            # --- НОВОЕ: Проверка на дубликат вебхука ---
+            message_token = data.get('message_token') # Получаем token из вебхука
+            if message_token:
+                current_time = time.time()
+                # Удаляем устаревшие токены
+                expired_tokens = [token for token, timestamp in processed_tokens.items() if current_time - timestamp > TOKEN_EXPIRY_SECONDS]
+                for token in expired_tokens:
+                    del processed_tokens[token]
+
+                # Проверяем, обрабатывался ли уже этот токен
+                if message_token in processed_tokens:
+                    logger.info(f"Ignoring duplicate webhook for token: {message_token}")
+                    return jsonify({"status": 0}) # Возвращаем OK, чтобы Viber не повторял запрос
+                
+                # Запоминаем токен как обработанный
+                processed_tokens[message_token] = current_time
+                logger.debug(f"Registered new message token: {message_token}")
+
+            # --- Конец проверки на дубликат ---
+
+            user_id = None
+            message_text = None
+            sender_name = data.get('sender', {}).get('name', 'Unknown')
+
+            event_type = data.get('event')
+            logger.info(f"Event type: {event_type}")
+
+            if event_type == 'message':
+                logger.info("Processing 'message' event.")
+                user_id = data.get('sender', {}).get('id')
+                logger.info(f"User ID from sender: {user_id}")
+                if data['message']['type'] == 'text':
+                    message_text = data['message']['text'].lower()
+                    logger.info(f"Message text: {message_text}")
+                else:
+                    logger.info(f"Non-text message type: {data['message']['type']}")
+                    return jsonify({"status": 0})
+
+            elif event_type == 'conversation_started':
+                logger.info("Processing 'conversation_started' event.")
+                user_id = data.get('user', {}).get('id') # Для conversation_started используем 'user'
+                logger.info(f"User ID from user: {user_id}")
+                # Отправляем главное меню при начале разговора
+                if user_id:
+                    logger.info(f"Sending main menu to {user_id} on conversation start.")
+                    send_message_with_keyboard(user_id, f"🔐 Добро пожаловать, {sender_name}! Используйте меню.", get_main_menu_keyboard())
+                return jsonify({"status": 0})
+
+            elif event_type in ['subscribed', 'unsubscribed', 'failed', 'seen', 'delivered']:
+                # Эти события не требуют ответа от бота, но логируем их
+                logger.info(f"Received event '{event_type}' which does not require processing.")
+                return jsonify({"status": 0})
+
+            else:
+                logger.warning(f"Unknown event type: {event_type}")
+                return jsonify({"status": 0})
+
+            if not user_id:
+                logger.warning("No user_id found in webhook data after processing event.")
+                return jsonify({"status": 0})
+
+            logger.info(f"Final user_id for processing: {user_id}")
+
+            if not is_authorized_user(user_id):
+                logger.info(f"⛔ Unauthorized access attempt from: {user_id}")
+                send_message_with_keyboard(user_id, "❌ Доступ запрещен. Этот бот приватный.")
+                return jsonify({"status": 0})
+
+            action_body = data.get('message', {}).get('text') # Для кнопок, текст = ActionBody
+            logger.info(f"Action body (from message.text): {action_body}")
+            if action_body:
+                 if action_body == "crypto_menu":
+                     logger.info("Handling 'crypto_menu' action.")
+                     send_message_with_keyboard(user_id, "Выберите действие в Крипто:", get_crypto_menu_keyboard())
+                 elif action_body == "help_info":
+                     logger.info("Handling 'help_info' action.")
+                     send_message_with_keyboard(user_id, "🤖 Это приватный бот.\nИспользуйте меню для навигации.")
+                 elif action_body == "back_to_main":
+                     logger.info("Handling 'back_to_main' action.")
+                     send_message_with_keyboard(user_id, "Возврат в главное меню.", get_main_menu_keyboard())
+                 elif action_body == "quick_report":
+                     logger.info("Handling 'quick_report' action.")
+                     # Шаг 1: Получить *сырые* данные из Notion
+                     raw_data, error = get_raw_crypto_data_from_notion_http()
+                     if error:
+                         logger.error(f"Error fetching raw data for quick report: {error}")
+                         send_message_with_keyboard(user_id, error)
+                     else:
+                         # Шаг 2: Отправить *сырые* данные в ИИ API
+                         ai_report = send_data_to_ai_api(raw_data)
+                         if ai_report.startswith("❌"):
+                             logger.error(f"Error from AI API: {ai_report}")
+                             send_message_with_keyboard(user_id, ai_report)
+                         else:
+                             # Шаг 3: Отправить сгенерированный ИИ отчет пользователю
+                             send_message_with_keyboard(user_id, ai_report, get_crypto_menu_keyboard()) # Возвращаем к подменю после отчета
+                 # Удалена обработка 'wide_report'
+                 else:
+                     logger.info(f"Unknown action body: {action_body}")
+                     # Возможно, это текстовое сообщение, не связанное с меню
+                     if message_text: # Проверяем, было ли это текстовое сообщение
+                         logger.info(f"Received unknown action body, treating as text command: {message_text}")
+                         # Можно добавить обработку старых команд или игнорировать
+                         send_message_with_keyboard(user_id, f"🤔 Неизвестная команда: {message_text}", get_main_menu_keyboard())
+
+            logger.info("--- Webhook processing finished ---")
+            return jsonify({"status": 0})
+
+        except Exception as e:
+            logger.error(f"❌ Error processing webhook: {e}")
+            logger.exception("Full traceback:") # Логируем полный стек вызовов
+            return jsonify({"status": 1})
+
+def send_message(user_id, text): # Оставлена для совместимости
+    send_message_with_keyboard(user_id, text)
+
+if __name__ == '__main__':
+    logger.info(f"🚀 Starting on port {PORT}")
+    app.run(host='0.0.0.0', port=int(PORT), debug=False)
