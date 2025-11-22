@@ -137,12 +137,12 @@ def get_quick_report():
         return "❌ Ошибка при извлечении данных из Notion."
 
     parsed_data = parse_notion_pages(pages)
-    if not parsed_
+    if not parsed_data: # <-- ИСПРАВЛЕНО: добавлено 'data'
         return "⚠️ Данные в базе Notion отсутствуют или не удалось их обработать."
 
     # Формируем строку результата
     report_text = f"📈 Краткий отчет (Криптосчет - Прибыль - Капитализация - Депозит %):\n\n"
-    for item in parsed_data:
+    for item in parsed_data: # <-- ИСПРАВЛЕНО: добавлено 'data'
         report_text += f"- {item['crypto_account']} - {item['current_profit_raw']} - {item['capitalization']} - {item['deposit_pct']}\n"
 
     logger.info("Быстрый отчет (указанные колонки) сформирован.")
@@ -159,11 +159,11 @@ def get_wide_report():
         return "❌ Ошибка при извлечении данных из Notion."
 
     parsed_data = parse_notion_pages(pages)
-    if not parsed_
+    if not parsed_data: # <-- ИСПРАВЛЕНО: добавлено 'data'
         return "⚠️ Данные в базе Notion отсутствуют или не удалось их обработать."
 
     report_text = "📋 Подробный отчет о криптосчетах:\n\n"
-    for item in parsed_data:  # Показываем ВСЕ счета
+    for item in parsed_data:  # Показываем ВСЕ счета, ИСПРАВЛЕНО: добавлено 'data'
         report_text += f"- Криптосчет: {item.get('crypto_account', 'N/A')}\n"
         report_text += f"  Прибыль/убыток: {item.get('current_profit_raw', 'N/A')}\n"
         report_text += f"  Капитализация: {item.get('capitalization', 'N/A')}\n"
