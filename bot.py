@@ -26,7 +26,8 @@ AUTHORIZED_USER_IDS = [
 logger.info("🤖 Private Viber Bot with Notion Integration (via AI) starting...")
 logger.info(f"🔐 Authorized users: {len(AUTHORIZED_USER_IDS)}")
 logger.info(f"📊 Notion DB ID: {NOTION_DATABASE_ID[-8:] if NOTION_DATABASE_ID else 'Not set'}...")
-logger.info(f"🧠 Using AI API: {OPENAI_API_URL} (Model: deepseek-reasoner)")
+# --- ИЗМЕНЕНО: Сообщение об используемой модели ---
+logger.info(f"🧠 Using AI API: {OPENAI_API_URL} (Model: deepseek-chat)")
 
 def is_authorized_user(user_id):
     """Проверяет, авторизован ли пользователь"""
@@ -253,7 +254,7 @@ def send_data_to_ai_api(raw_data):
 
     # Формируем сообщение для ИИ
     # Промпт: Опишите, что ИИ должен сделать с raw_data
-    # --- ИЗМЕНЕНО: Убрана роль 'developer', добавлена инструкция в сообщение 'user' ---
+    # --- ИЗМЕНЕНО: Убрана роль 'developer', добавлена инструкция в сообщение 'user', модель 'deepseek-chat' ---
     user_message_content = (
         "You are a helpful assistant.\n\n"
         "Проанализируй следующие данные криптосчетов. "
@@ -265,7 +266,7 @@ def send_data_to_ai_api(raw_data):
     )
 
     payload = {
-        "model": "deepseek-reasoner", # Указана модель deepseek-reasoner
+        "model": "deepseek-chat", # --- ИЗМЕНЕНО: Указана модель deepseek-chat ---
         "messages": [
             {
                 "role": "user", # --- ИЗМЕНЕНО: Используем только 'user' ---
@@ -277,7 +278,8 @@ def send_data_to_ai_api(raw_data):
 
     try:
         logger.info("Sending data to AI API...")
-        response = requests.post(OPENAI_API_URL, headers=headers, json=payload, timeout=30) # Увеличим таймаут
+        # --- ИЗМЕНЕНО: Увеличен таймаут до 60 секунд ---
+        response = requests.post(OPENAI_API_URL, headers=headers, json=payload, timeout=60) 
         response.raise_for_status()
 
         ai_response = response.json()
@@ -292,6 +294,10 @@ def send_data_to_ai_api(raw_data):
         return f"❌ Ошибка HTTP при запросе к ИИ: {http_err}"
     except requests.exceptions.RequestException as req_err:
         logger.error(f"Request error occurred while calling AI API: {req_err}")
+        # --- ИЗМЕНЕНО: Уточнение типа ошибки ---
+        if isinstance(req_err, requests.exceptions.ReadTimeout):
+            logger.error("AI API request timed out.")
+            return f"❌ Таймаут запроса к ИИ: сервер не ответил за 60 секунд."
         return f"❌ Ошибка запроса к ИИ: {req_err}"
     except Exception as e:
         logger.error(f"Unexpected error calling AI API: {e}")
